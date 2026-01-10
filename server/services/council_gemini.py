@@ -1,8 +1,9 @@
 from __future__ import annotations
+
 from typing import Any, Literal
 
+from server.services.gemini_generate import GeminiError, extract_text, generate_content
 from server.services.llm_json import LLMJSONError, parse_json_object
-from server.services.openai_responses import OpenAIError, extract_text, responses_create
 
 
 Archetype = Literal["sleep_first", "errands_first", "admin_first"]
@@ -41,7 +42,7 @@ Return ONLY valid JSON with keys:
 """
 
 
-def generate_proposal_openai(
+def generate_proposal_gemini(
     *,
     api_key: str,
     model: str,
@@ -50,16 +51,17 @@ def generate_proposal_openai(
     energy: str | None,
     timeout_s: float = 30.0,
 ) -> dict[str, Any]:
-    resp = responses_create(
+    resp = generate_content(
         api_key=api_key,
         model=model,
-        input_text=_proposal_prompt(archetype=archetype, logs=logs, energy=energy),
+        user_text=_proposal_prompt(archetype=archetype, logs=logs, energy=energy),
         timeout_s=timeout_s,
     )
     text = extract_text(resp)
     if not text:
-        raise OpenAIError("Empty model response")
+        raise GeminiError("Empty model response")
     try:
         return parse_json_object(text)
     except LLMJSONError as e:
-        raise OpenAIError(str(e)) from e
+        raise GeminiError(str(e)) from e
+
