@@ -466,6 +466,38 @@
             </div>
           </div>
 
+          {% set win = decision.selected_archetype %}
+          {% set win_scores = (decision.scores.get(win) if decision.scores else None) %}
+          {% if win_scores %}
+            <details class="mt-4 rounded-2xl border border-zinc-800/80 bg-zinc-950/40 p-4">
+              <summary class="cursor-pointer text-xs font-semibold text-zinc-300">
+                Why the referee picked {{ archetype_labels.get(win, win.replace("_","-")) }}
+              </summary>
+              <div class="mt-3 grid gap-2 text-xs text-zinc-300">
+                {% for dim, label in [
+                  ("commitments_fit","Commitments fit"),
+                  ("deadline_risk","Deadline risk"),
+                  ("energy_match","Energy match"),
+                  ("time_window","Time window"),
+                  ("inventory_risk","Inventory risk")
+                ] %}
+                  {% set d = (win_scores.get(dim) if win_scores and (win_scores.get is defined) else None) %}
+                  <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/30 px-3 py-2">
+                    <div class="flex items-center justify-between">
+                      <div class="font-semibold text-zinc-200">{{ label }}</div>
+                      {% if d and d.score is defined %}
+                        <div class="text-[11px] text-zinc-400">score {{ d.score }}</div>
+                      {% endif %}
+                    </div>
+                    {% if d and d.why is defined %}
+                      <div class="mt-1 text-[11px] text-zinc-400">{{ d.why }}</div>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+              </div>
+            </details>
+          {% endif %}
+
           <div class="mt-5 border-t border-zinc-800/80 pt-4">
             <div class="text-xs font-semibold text-zinc-300">Evidence</div>
             <div class="mt-3 grid gap-2">
@@ -524,7 +556,7 @@
           {% endfor %}
           <div class="mt-3 flex flex-wrap gap-2 text-xs">
             <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 text-zinc-300">
-              Stabilize-first: {{ vc.sleep }}
+              {{ archetype_labels.get("sleep_first","sleep-first") }}: {{ vc.sleep }}
             </span>
             <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 text-zinc-300">
               Errands-first: {{ vc.errands }}
@@ -534,34 +566,41 @@
             </span>
           </div>
 
+          {% set cards = (roundtable_cards if roundtable_cards is defined else []) %}
           <div class="mt-4 grid gap-2">
-            {% for m in roundtable_votes %}
-              {% set meta = m.meta or {} %}
-              {% set prov = meta.provider or "heuristic" %}
-              {% set model = meta.model or "" %}
-              {% set vote = meta.vote or "" %}
-              {% set agree = meta.agree %}
+            {% for c in cards %}
               <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 p-3 text-xs text-zinc-300">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                  <div class="flex flex-wrap items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2 py-0.5 text-[11px] text-zinc-300">
+                    {{ c.provider }}{% if c.model %} · {{ c.model }}{% endif %}
+                  </span>
+                  {% if c.vote %}
                     <span class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2 py-0.5 text-[11px] text-zinc-300">
-                      {{ prov }}{% if model %} · {{ model }}{% endif %}
+                      vote: {{ archetype_labels.get(c.vote, c.vote.replace("_","-")) }}
                     </span>
-                    {% if vote %}
-                      <span class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2 py-0.5 text-[11px] text-zinc-300">
-                        vote: {{ archetype_labels.get(vote, vote.replace("_","-")) }}
-                      </span>
-                    {% endif %}
-                    {% if agree is not none and vote %}
-                      <span class="rounded-full border px-2 py-0.5 text-[11px]
-                        {% if agree %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
-                        {% else %}border-amber-500/40 bg-amber-500/10 text-amber-200{% endif %}">
-                        {% if agree %}agrees{% else %}dissent{% endif %}
-                      </span>
-                    {% endif %}
-                  </div>
+                  {% endif %}
+                  {% if c.agree is not none and c.vote %}
+                    <span class="rounded-full border px-2 py-0.5 text-[11px]
+                      {% if c.agree %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+                      {% else %}border-amber-500/40 bg-amber-500/10 text-amber-200{% endif %}">
+                      {% if c.agree %}agrees{% else %}dissent{% endif %}
+                    </span>
+                  {% endif %}
                 </div>
-                <div class="mt-2 whitespace-pre-line text-[11px] text-zinc-400">{{ (m.content or "")|truncate(260, True, "…") }}</div>
+                {% if c.why and c.why|length %}
+                  <div class="mt-2 text-[11px] font-semibold text-zinc-300">Why</div>
+                  <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[11px] text-zinc-400">
+                    {% for r in c.why %}
+                      <li>{{ r }}</li>
+                    {% endfor %}
+                  </ul>
+                {% endif %}
+                {% if c.concern %}
+                  <div class="mt-2 text-[11px] text-zinc-400"><span class="font-semibold text-zinc-300">Concern:</span> {{ c.concern }}</div>
+                {% endif %}
+                {% if c.tweak %}
+                  <div class="mt-1 text-[11px] text-zinc-400"><span class="font-semibold text-zinc-300">Tweak:</span> {{ c.tweak }}</div>
+                {% endif %}
               </div>
             {% endfor %}
           </div>

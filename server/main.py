@@ -1464,6 +1464,51 @@ async def _build_run_template_data(mongo: Mongo, *, shift_id: str, run_id: str, 
         meta = m.get("meta") or {}
         if meta.get("kind") == "roundtable_vote":
             roundtable_votes.append(m)
+    roundtable_cards: list[dict] = []
+    for m in roundtable_votes:
+        meta = m.get("meta") or {}
+        raw = str(m.get("content") or "").strip()
+        provider = str(meta.get("provider") or "heuristic")
+        model = str(meta.get("model") or "")
+        vote = str(meta.get("vote") or "")
+        agree = bool(meta.get("agree")) if meta.get("agree") is not None else None
+
+        why: list[str] = []
+        concern = ""
+        tweak = ""
+        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        mode = ""
+        for ln in lines:
+            upper = ln.upper()
+            if upper.startswith("WHY:"):
+                mode = "why"
+                continue
+            if upper.startswith("CONCERN:"):
+                mode = ""
+                concern = ln.split(":", 1)[1].strip() if ":" in ln else ln.strip()
+                continue
+            if upper.startswith("TWEAK:"):
+                mode = ""
+                tweak = ln.split(":", 1)[1].strip() if ":" in ln else ln.strip()
+                continue
+            if upper.startswith("VOTE:"):
+                mode = ""
+                continue
+            if mode == "why" and ln.startswith("-"):
+                why.append(ln.lstrip("-").strip())
+
+        roundtable_cards.append(
+            {
+                "provider": provider,
+                "model": model,
+                "vote": vote,
+                "agree": agree,
+                "why": why[:3],
+                "concern": concern,
+                "tweak": tweak,
+                "raw": raw,
+            }
+        )
 
     live_council_html = ""
     live_council_count = 0
@@ -1500,6 +1545,7 @@ async def _build_run_template_data(mongo: Mongo, *, shift_id: str, run_id: str, 
         "live_council_html": live_council_html,
         "live_council_count": live_council_count,
         "roundtable_votes": roundtable_votes,
+        "roundtable_cards": roundtable_cards,
         "events": run_events,
     }
 
