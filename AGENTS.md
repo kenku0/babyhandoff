@@ -144,6 +144,7 @@ The MVP makes collaboration “judge-visible” via MongoDB-backed audit trails:
 - `tasks` show per-agent status, attempts, and outputs (including OpenAI fallback signals)
 - `messages` store the coordinator context pack + each agent’s output
 - `context_packs` persist token-budgeted inputs shared across agents
+- Run page shows a live transcript (rendered from `messages`) while a run is `running`, and `council.md` can be downloaded from the same source-of-truth
 
 ### Task + Message Format (MongoDB Auditability)
 We persist both the work graph and the “debate” so judges can replay the run:

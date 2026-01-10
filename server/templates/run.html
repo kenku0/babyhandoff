@@ -24,7 +24,7 @@
         <a href="/shifts/{{ shift_id }}" class="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 px-4 py-2 text-sm font-semibold text-zinc-300 hover:border-zinc-700/80">
           Back to shift
         </a>
-        {% if council_artifact %}
+        {% if council_artifact or live_council_count %}
           <a href="/shifts/{{ shift_id }}/runs/{{ run['_id'] }}/council.md" class="rounded-2xl border border-zinc-700/80 bg-zinc-950/50 px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-zinc-600/80">
             Download council.md
           </a>
@@ -45,9 +45,10 @@
         <div class="text-sm font-semibold">What-if re-run</div>
         <form action="/shifts/{{ shift_id }}/runs" method="post" class="flex flex-wrap items-center gap-2">
           <div class="text-xs text-zinc-500">Energy</div>
-          {% for (value, label, checked) in [("","Auto",true),("high","High",false),("medium","Medium",false),("low","Low",false)] %}
+          {% set energy_selected = (run.energy_override or "")|lower %}
+          {% for (value, label) in [("","Auto"),("high","High"),("medium","Medium"),("low","Low")] %}
             <label class="cursor-pointer">
-              <input class="peer sr-only" type="radio" name="energy" value="{{ value }}" {% if checked %}checked{% endif %} />
+              <input class="peer sr-only" type="radio" name="energy" value="{{ value }}" {% if value == energy_selected %}checked{% endif %} />
               <span class="inline-flex items-center rounded-full border border-zinc-800/80 bg-zinc-950/40 px-3 py-1 text-xs text-zinc-300 transition peer-checked:border-indigo-500/40 peer-checked:bg-indigo-500/10 peer-checked:text-indigo-200 hover:border-zinc-700/80">
                 {{ label }}
               </span>
@@ -100,7 +101,7 @@
             <div class="mt-3 whitespace-pre-line text-xs text-zinc-400">{{ context_pack.summary }}</div>
           {% endif %}
           {% if context_pack_html %}
-            <div class="mt-4 prose prose-invert prose-zinc max-w-none text-sm">
+            <div class="markdown mt-4 text-sm">
               {{ context_pack_html | safe }}
             </div>
           {% endif %}
@@ -313,6 +314,8 @@
           <div class="text-sm font-semibold">Council Transcript</div>
           {% if council_artifact %}
             <div class="text-xs text-zinc-500">v{{ council_artifact.version }}</div>
+          {% elif live_council_count %}
+            <div class="text-xs text-zinc-500">live · {{ live_council_count }} msgs</div>
           {% endif %}
         </div>
         {% if council_artifact %}
@@ -325,6 +328,10 @@
               <pre class="mt-2 overflow-auto rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-[11px] text-zinc-300">{{ council_artifact.diff }}</pre>
             </div>
           {% endif %}
+        {% elif live_council_html %}
+          <div class="markdown mt-4 text-sm">
+            {{ live_council_html | safe }}
+          </div>
         {% else %}
           <div class="mt-4 text-sm text-zinc-400">
             {% if run_status == 'running' %}Transcript will appear when the run finishes.{% else %}No council transcript found.{% endif %}

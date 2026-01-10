@@ -1,133 +1,170 @@
 :root {
-  --markdown-fg: rgb(228 228 231); /* zinc-200 */
-  --markdown-muted: rgb(161 161 170); /* zinc-400 */
-  --markdown-border: rgb(39 39 42); /* zinc-800 */
-  --markdown-code-bg: rgb(9 9 11); /* zinc-950 */
+  color-scheme: dark;
 }
 
-/* Slightly nicer scrollbars (where supported) */
-* {
-  scrollbar-color: rgba(113, 113, 122, 0.45) transparent; /* zinc-500 */
+html {
+  scroll-behavior: smooth;
 }
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
+
 *::-webkit-scrollbar-thumb {
-  background: rgba(113, 113, 122, 0.45);
-  border-radius: 999px;
+  background: rgba(161, 161, 170, 0.22);
   border: 2px solid transparent;
-  background-clip: content-box;
+  border-radius: 9999px;
+  background-clip: padding-box;
 }
 
-/* Markdown rendering without Tailwind typography plugin */
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(161, 161, 170, 0.3);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+a {
+  text-underline-offset: 3px;
+}
+
+/* Minimal markdown styling (we don't rely on Tailwind typography plugin). */
+.prose,
 .markdown {
-  color: var(--markdown-fg);
-  line-height: 1.6;
+  color: rgb(228, 228, 231); /* zinc-200 */
+  line-height: 1.7;
 }
-.markdown > :first-child {
-  margin-top: 0 !important;
-}
+
+.prose h1,
+.prose h2,
+.prose h3,
 .markdown h1,
 .markdown h2,
 .markdown h3 {
+  color: rgb(244, 244, 245); /* zinc-100 */
   letter-spacing: -0.01em;
-  margin: 1.1rem 0 0.55rem;
+  margin: 1.25em 0 0.5em;
 }
+
+.prose h1,
 .markdown h1 {
-  font-size: 1.05rem;
-  font-weight: 700;
+  font-size: 1.25rem;
 }
+
+.prose h2,
 .markdown h2 {
-  font-size: 0.98rem;
-  font-weight: 700;
+  font-size: 1.1rem;
 }
+
+.prose h3,
 .markdown h3 {
-  font-size: 0.92rem;
-  font-weight: 650;
-  color: rgb(212 212 216); /* zinc-300 */
+  font-size: 1rem;
 }
-.markdown p {
-  margin: 0.6rem 0;
-  color: var(--markdown-fg);
+
+.prose p,
+.prose ul,
+.prose ol,
+.prose blockquote,
+.prose pre,
+.prose table,
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote,
+.markdown pre,
+.markdown table {
+  margin: 0.8em 0;
 }
-.markdown a {
-  color: rgb(129 140 248); /* indigo-400 */
-  text-decoration: none;
-}
-.markdown a:hover {
-  text-decoration: underline;
-}
+
+.prose ul,
+.prose ol,
 .markdown ul,
 .markdown ol {
-  margin: 0.6rem 0 0.6rem 1.25rem;
+  padding-left: 1.2rem;
 }
+
+.prose li,
 .markdown li {
-  margin: 0.25rem 0;
+  margin: 0.25em 0;
 }
+
+.prose code,
 .markdown code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.85em;
-  padding: 0.12rem 0.32rem;
-  border: 1px solid var(--markdown-border);
-  background: rgba(9, 9, 11, 0.6);
-  border-radius: 0.5rem;
-  color: rgb(244 244 245); /* zinc-100 */
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(63, 63, 70, 0.6);
+  border-radius: 0.6rem;
+  padding: 0.15rem 0.35rem;
 }
+
+.prose pre,
 .markdown pre {
-  margin: 0.8rem 0;
-  padding: 0.9rem 1rem;
+  background: rgba(9, 9, 11, 0.35);
+  border: 1px solid rgba(63, 63, 70, 0.6);
   border-radius: 1rem;
-  border: 1px solid var(--markdown-border);
-  background: rgba(9, 9, 11, 0.75);
+  padding: 0.75rem 0.9rem;
   overflow: auto;
 }
+
+.prose pre code,
 .markdown pre code {
-  border: 0;
-  padding: 0;
   background: transparent;
-  color: rgb(228 228 231);
-  font-size: 0.82rem;
+  border: none;
+  padding: 0;
 }
+
+.prose blockquote,
 .markdown blockquote {
-  margin: 0.8rem 0;
-  padding: 0.75rem 1rem;
-  border-left: 3px solid rgba(99, 102, 241, 0.5);
-  background: rgba(9, 9, 11, 0.4);
-  border-radius: 0.75rem;
-  color: var(--markdown-muted);
+  border-left: 2px solid rgba(99, 102, 241, 0.5);
+  padding-left: 0.9rem;
+  color: rgba(228, 228, 231, 0.9);
 }
-.markdown hr {
-  border: 0;
-  border-top: 1px solid var(--markdown-border);
-  margin: 1rem 0;
-}
+
+.prose table,
 .markdown table {
   width: 100%;
   border-collapse: collapse;
-  margin: 0.8rem 0;
-  border-radius: 1rem;
   overflow: hidden;
-  border: 1px solid var(--markdown-border);
-}
-.markdown th,
-.markdown td {
-  padding: 0.5rem 0.6rem;
-  border-top: 1px solid var(--markdown-border);
-  text-align: left;
-  vertical-align: top;
-  font-size: 0.85rem;
-}
-.markdown th {
-  background: rgba(9, 9, 11, 0.6);
-  color: rgb(212 212 216);
-  font-weight: 650;
+  border-radius: 0.8rem;
 }
 
-/* HTMX swap animation (optional polish) */
-.htmx-fade-in {
-  animation: htmxFadeIn 140ms ease-out;
+.prose th,
+.prose td,
+.markdown th,
+.markdown td {
+  border: 1px solid rgba(63, 63, 70, 0.6);
+  padding: 0.5rem 0.6rem;
+  vertical-align: top;
 }
+
+.prose th,
+.markdown th {
+  color: rgba(244, 244, 245, 0.9);
+  background: rgba(9, 9, 11, 0.35);
+}
+
+.prose a,
+.markdown a {
+  color: rgba(129, 140, 248, 1);
+}
+
+.prose a:hover,
+.markdown a:hover {
+  color: rgba(165, 180, 252, 1);
+}
+
+/* Optional polish */
+.htmx-fade-in {
+  animation: htmxFadeIn 160ms ease-out;
+}
+
 @keyframes htmxFadeIn {
   from {
     opacity: 0;
@@ -139,10 +176,10 @@
   }
 }
 
-/* Hide disclosure marker (for custom-styled <summary>) */
 details > summary {
   list-style: none;
 }
+
 details > summary::-webkit-details-marker {
   display: none;
 }

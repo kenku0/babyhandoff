@@ -28,8 +28,9 @@ async def connect_mongo(settings: Settings) -> Mongo:
         client.close()
         raise RuntimeError(
             "MongoDB authentication failed. Check your MONGODB_URI username/password, "
-            "URL-encode any special characters in the password, and ensure the Atlas DB user "
-            "has access to the target database."
+            "URL-encode any special characters in the password, and ensure the Atlas DB user exists. "
+            "Tip: use the Atlas “Drivers” connection string ending with `/` and set the database via MONGODB_DB "
+            "(or add `authSource=admin` if your URI includes a database path)."
         ) from e
     except ServerSelectionTimeoutError as e:
         client.close()

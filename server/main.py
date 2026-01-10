@@ -790,6 +790,9 @@ async def create_run(
     events = EventsRepo(mongo.db)
     agents = AgentsRepo(mongo.db)
     tasks = TasksRepo(mongo.db)
+    shift = await ShiftsRepo(mongo.db).get(shift_id)
+    if not shift:
+        return RedirectResponse(url="/", status_code=303)
 
     run_id = await RunsRepo(mongo.db).create(shift_id, energy_override=energy or None)
     await events.add(
@@ -863,6 +866,11 @@ async def create_run(
 async def run_view(request: Request, shift_id: str, run_id: str):
     mongo = _mongo(request)
     run = await RunsRepo(mongo.db).get(run_id)
+    if not run:
+        return RedirectResponse(url=f"/shifts/{shift_id}", status_code=303)
+    run_shift_id = str(run.get("shift_id") or "")
+    if run_shift_id and run_shift_id != shift_id:
+        return RedirectResponse(url=f"/shifts/{run_shift_id}/runs/{run_id}", status_code=303)
     tasks = await TasksRepo(mongo.db).list_for_run(run_id)
     proposals = await ProposalsRepo(mongo.db).list_for_run(run_id)
     decision = await DecisionsRepo(mongo.db).get_for_run(run_id)
@@ -872,6 +880,18 @@ async def run_view(request: Request, shift_id: str, run_id: str):
     html = render_markdown_safe(artifact["markdown"]) if artifact else ""
     council_artifact = await ArtifactsRepo(mongo.db).get_for_run(run_id, kind="council_transcript_markdown")
     council_html = render_markdown_safe(council_artifact["markdown"]) if council_artifact else ""
+    live_council_html = ""
+    live_council_count = 0
+    if not council_artifact:
+        run_messages = await MessagesRepo(mongo.db).list_for_run(run_id, limit=200)
+        live_council_count = len(run_messages)
+        if run_messages:
+            live_council_md = build_council_transcript_markdown_from_messages(
+                shift_id=shift_id,
+                run_id=run_id,
+                messages=run_messages,
+            )
+            live_council_html = render_markdown_safe(live_council_md)
     run_events = [
         e
         for e in await EventsRepo(mongo.db).list_for_shift(shift_id, limit=120)
@@ -892,6 +912,8 @@ async def run_view(request: Request, shift_id: str, run_id: str):
             "artifact_html": html,
             "council_artifact": council_artifact,
             "council_html": council_html,
+            "live_council_html": live_council_html,
+            "live_council_count": live_council_count,
             "events": run_events,
         },
     )
@@ -916,9 +938,17 @@ async def download_handoff(request: Request, shift_id: str, run_id: str):
 async def download_council(request: Request, shift_id: str, run_id: str):
     mongo = _mongo(request)
     artifact = await ArtifactsRepo(mongo.db).get_for_run(run_id, kind="council_transcript_markdown")
-    if not artifact:
-        return RedirectResponse(url=f"/shifts/{shift_id}/runs/{run_id}", status_code=303)
-    markdown_text = artifact["markdown"]
+    if artifact:
+        markdown_text = artifact["markdown"]
+    else:
+        run_messages = await MessagesRepo(mongo.db).list_for_run(run_id, limit=400)
+        if not run_messages:
+            return RedirectResponse(url=f"/shifts/{shift_id}/runs/{run_id}", status_code=303)
+        markdown_text = build_council_transcript_markdown_from_messages(
+            shift_id=shift_id,
+            run_id=run_id,
+            messages=run_messages,
+        )
     filename = f"babyhandoff_council_shift_{shift_id}_run_{run_id}.md"
     return Response(
         content=markdown_text,

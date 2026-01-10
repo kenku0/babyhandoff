@@ -100,10 +100,11 @@
           Set repo env vars in <code class="text-zinc-200">.env</code>:
         </li>
       </ol>
-      <pre class="mt-4 overflow-x-auto rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-4 py-3 text-xs text-zinc-300"><code>MONGODB_URI=mongodb+srv://&lt;user&gt;:&lt;urlencoded_password&gt;@cluster0.&lt;id&gt;.mongodb.net/babyhandoff?retryWrites=true&amp;w=majority
+      <pre class="mt-4 overflow-x-auto rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-4 py-3 text-xs text-zinc-300"><code>MONGODB_URI=mongodb+srv://&lt;user&gt;:&lt;urlencoded_password&gt;@cluster0.&lt;id&gt;.mongodb.net/?retryWrites=true&amp;w=majority
 MONGODB_DB=babyhandoff</code></pre>
       <div class="mt-3 text-xs text-zinc-500">
-        Tip: URL-encode special characters in the password (e.g. <code class="text-zinc-300">@</code> →
+        Tip: use the Atlas “Drivers” URI ending with <code class="text-zinc-300">/</code> (this app selects the DB via
+        <code class="text-zinc-300">MONGODB_DB</code>). URL-encode password chars (e.g. <code class="text-zinc-300">@</code> →
         <code class="text-zinc-300">%40</code>).
       </div>
     </div>

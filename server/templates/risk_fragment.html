@@ -1,7 +1,11 @@
 <div class="htmx-fade-in">
   <div class="flex items-center justify-between">
     <div class="text-sm font-semibold">Risk Radar</div>
-    <div class="text-xs text-zinc-500">auto</div>
+    {% if state and state.updated_at %}
+      <div class="text-xs text-zinc-500">updated {{ state.updated_at }}</div>
+    {% else %}
+      <div class="text-xs text-zinc-500">auto</div>
+    {% endif %}
   </div>
 
   {% if state %}
