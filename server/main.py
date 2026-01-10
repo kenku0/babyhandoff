@@ -33,6 +33,8 @@ from server.services.council import (
     unified_diff,
 )
 from server.services.council_openai import generate_proposal_openai
+from server.services.council_anthropic import generate_proposal_anthropic
+from server.services.council_gemini import generate_proposal_gemini
 from server.services.change_streams import ChangeStreamWorker
 from server.services.context_packs import build_context_pack
 from server.services.markdown_render import render_markdown_safe
@@ -347,14 +349,20 @@ async def _execute_council_run(
     context_pack_id: str | None = None
     try:
         logs = await LogsRepo(mongo.db).list_for_shift(shift_id, limit=200)
-        context_pack = build_context_pack(logs=logs, energy_override=energy_override)
+        context_pack = build_context_pack(
+            logs=logs,
+            energy_override=energy_override,
+            token_budget=settings.context_pack_token_budget,
+        )
         context_pack_id = await ContextPacksRepo(mongo.db).create(
             shift_id=shift_id,
             run_id=run_id,
             token_budget=settings.context_pack_token_budget,
             pack=context_pack,
         )
-        context_logs = logs[-40:] if len(logs) > 40 else logs
+        log_map = {str(l.get("_id") or ""): l for l in logs}
+        included_ids = [str(x) for x in (context_pack.get("included_log_ids") or []) if str(x)]
+        context_logs = [log_map[i] for i in included_ids if i in log_map] or (logs[-40:] if len(logs) > 40 else logs)
 
         await tasks.mark_running(
             task_ids["normalize_logs"],
@@ -363,6 +371,8 @@ async def _execute_council_run(
                 "log_count": len(logs),
                 "context_pack_id": context_pack_id,
                 "context_logs": len(context_logs),
+                "token_budget": settings.context_pack_token_budget,
+                "token_estimate": context_pack.get("token_estimate"),
             },
         )
         await tasks.mark_completed(
@@ -371,6 +381,8 @@ async def _execute_council_run(
                 "log_count": len(logs),
                 "context_pack_id": context_pack_id,
                 "context_logs": len(context_logs),
+                "token_budget": settings.context_pack_token_budget,
+                "token_estimate": context_pack.get("token_estimate"),
             },
         )
 
@@ -387,7 +399,7 @@ async def _execute_council_run(
                     f"- Council mode: `{settings.council_mode}`",
                     f"- Energy override: `{energy_override or 'auto'}`",
                     f"- Logs loaded: `{len(logs)}`",
-                    f"- Context pack: `{context_pack_id}` (logs: `{len(context_logs)}`)",
+                    f"- Context pack: `{context_pack_id}` (logs: `{len(context_logs)}`, token_estimate: `{context_pack.get('token_estimate')}` / budget: `{settings.context_pack_token_budget}`)",
                     "",
                     "### Context pack summary",
                     context_pack.get("summary") or "",
@@ -423,20 +435,6 @@ async def _execute_council_run(
                 "errands_first": "plan_errands_first",
                 "admin_first": "plan_admin_first",
             }
-            for archetype, task_name in planner_tasks.items():
-                await tasks.mark_running(
-                    task_ids[task_name],
-                    attempt=1,
-                    inputs={
-                        "council_mode": settings.council_mode,
-                        "context_pack_id": context_pack_id,
-                        "context_logs": len(context_logs),
-                        "model": settings.openai_model,
-                        "energy_override": energy_override,
-                        "timeout_s": settings.agent_timeout_seconds,
-                        "archetype": archetype,
-                    },
-                )
 
             async def _planner_call(archetype: str) -> None:
                 task_name = planner_tasks[archetype]
@@ -444,6 +442,19 @@ async def _execute_council_run(
                 last_error = ""
                 for attempt in range(1, planner_max_attempts + 1):
                     attempts = attempt
+                    await tasks.mark_running(
+                        task_ids[task_name],
+                        attempt=attempt,
+                        inputs={
+                            "council_mode": settings.council_mode,
+                            "context_pack_id": context_pack_id,
+                            "context_logs": len(context_logs),
+                            "model": settings.openai_model,
+                            "energy_override": energy_override,
+                            "timeout_s": settings.agent_timeout_seconds,
+                            "archetype": archetype,
+                        },
+                    )
                     await events.add(
                         shift_id=shift_id,
                         event_type="llm_attempt",
