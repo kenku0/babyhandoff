@@ -53,4 +53,3 @@ def extract_text(response: dict[str, Any]) -> str:
     if "output_text" in response:
         return str(response["output_text"]).strip()
     return ""
-
