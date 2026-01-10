@@ -443,6 +443,7 @@ async def _execute_council_run(
                 ]
             ),
             meta={
+                "kind": "run_start",
                 "council_mode": settings.council_mode,
                 "energy_override": energy_override,
                 "context_pack_id": context_pack_id,
@@ -790,8 +791,14 @@ async def _execute_council_run(
         proposals_repo = ProposalsRepo(mongo.db)
         proposal_ids: dict[str, str] = {}
         for p in output.proposals:
-            pid = await proposals_repo.add(run_id, p)
             archetype = str(p.get("archetype") or "")
+            p_doc = dict(p)
+            if archetype:
+                p_doc["source"] = {
+                    "council_mode": settings.council_mode,
+                    **(planner_meta.get(archetype, {}) if isinstance(planner_meta.get(archetype), dict) else {}),
+                }
+            pid = await proposals_repo.add(run_id, p_doc)
             if archetype:
                 proposal_ids[archetype] = pid
 
@@ -909,6 +916,8 @@ async def _execute_council_run(
                 role="assistant",
                 content=proposal_to_markdown(sleep),
                 meta={
+                    "kind": "proposal",
+                    "archetype": "sleep_first",
                     "council_mode": settings.council_mode,
                     "context_pack_id": context_pack_id,
                     "context_logs": len(context_logs),
@@ -924,6 +933,8 @@ async def _execute_council_run(
                 role="assistant",
                 content=proposal_to_markdown(errands),
                 meta={
+                    "kind": "proposal",
+                    "archetype": "errands_first",
                     "council_mode": settings.council_mode,
                     "context_pack_id": context_pack_id,
                     "context_logs": len(context_logs),
@@ -939,6 +950,8 @@ async def _execute_council_run(
                 role="assistant",
                 content=proposal_to_markdown(admin),
                 meta={
+                    "kind": "proposal",
+                    "archetype": "admin_first",
                     "council_mode": settings.council_mode,
                     "context_pack_id": context_pack_id,
                     "context_logs": len(context_logs),
@@ -954,6 +967,7 @@ async def _execute_council_run(
             role="assistant",
             content=decision_to_markdown(decision),
             meta={
+                "kind": "decision",
                 "decision_id": decision_id,
                 "context_pack_id": context_pack_id,
                 "judge_mode": decision.get("judge_mode") if isinstance(decision, dict) else None,
@@ -975,7 +989,7 @@ async def _execute_council_run(
                     f"- download: `/shifts/{shift_id}/runs/{run_id}/handoff.md`",
                 ]
             ),
-            meta={"artifact_id": handoff_artifact_id, "context_pack_id": context_pack_id},
+            meta={"kind": "handoff_written", "artifact_id": handoff_artifact_id, "context_pack_id": context_pack_id},
         )
 
         transcript_messages = await messages.list_for_run(run_id, limit=400)

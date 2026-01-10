@@ -35,6 +35,12 @@
           {% set ns.selected = p %}
         {% endif %}
       {% endfor %}
+      {% set stask = namespace(t=None) %}
+      {% for t in tasks %}
+        {% if selected_planner_task and t.name == selected_planner_task %}
+          {% set stask.t = t %}
+        {% endif %}
+      {% endfor %}
       {% set selected_title = (ns.selected.title if ns.selected and ns.selected.title else archetype_labels.get(decision.selected_archetype, decision.selected_archetype.replace("_", "-"))) %}
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -46,6 +52,12 @@
             </span>
           </div>
           <div class="mt-3 max-w-3xl text-sm text-zinc-300">{{ decision.summary }}</div>
+          {% if stask.t and stask.t.outputs and stask.t.outputs.provider %}
+            <div class="mt-2 text-xs text-zinc-500">
+              source: {{ stask.t.outputs.provider }}{% if stask.t.outputs.model %} · {{ stask.t.outputs.model }}{% endif %}
+              {% if stask.t.outputs.provider_fallback %}<span class="text-zinc-600">· fallback</span>{% endif %}
+            </div>
+          {% endif %}
         </div>
       </div>
 
@@ -91,6 +103,23 @@
             </ul>
           </div>
         </div>
+
+        {% if ns.selected.start_here or ns.selected.stop_rule %}
+          <div class="mt-4 rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 text-sm text-zinc-200 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+            {% if ns.selected.start_here %}
+              <div class="text-xs font-semibold text-zinc-400">Start here (next 10–15 min)</div>
+              <ul class="mt-2 list-disc space-y-1 pl-5">
+                {% for s in (ns.selected.start_here or [])[:5] %}
+                  <li>{{ s }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+            {% if ns.selected.stop_rule %}
+              <div class="mt-3 text-xs font-semibold text-zinc-400">Stop rule</div>
+              <div class="mt-1 text-sm text-zinc-300">{{ ns.selected.stop_rule }}</div>
+            {% endif %}
+          </div>
+        {% endif %}
       {% endif %}
     </div>
   {% elif run_status == "running" %}
@@ -285,7 +314,10 @@
                   {% if shown_attempt and t.max_attempts %} · attempt {{ shown_attempt }}/{{ t.max_attempts }}{% endif %}
                   {% if t.outputs and (t.outputs.llm_used is not none) %} · llm {{ "yes" if t.outputs.llm_used else "no" }}{% endif %}
                   {% if t.outputs and t.outputs.fallback %} · fallback{% endif %}
-                  {% if t.outputs and t.outputs.provider %} · {{ t.outputs.provider }}{% endif %}{% if t.outputs and t.outputs.model %} {{ t.outputs.model }}{% endif %}
+                  {% set task_provider = (t.outputs.provider if t.outputs and t.outputs.provider else (t.inputs.provider if t.inputs and t.inputs.provider else "")) %}
+                  {% set task_model = (t.outputs.model if t.outputs and t.outputs.model else (t.inputs.model if t.inputs and t.inputs.model else "")) %}
+                  {% if task_provider %} · {{ task_provider }}{% endif %}
+                  {% if task_model %} · {{ task_model }}{% endif %}
                 </div>
                 {% if t.outputs and t.outputs.error %}
                   <div class="mt-1 text-[11px] text-rose-300">error: {{ t.outputs.error }}</div>
@@ -436,6 +468,16 @@
                 <div class="text-xs text-zinc-400 group-open:text-zinc-200">Details</div>
               </summary>
               <div class="mt-4 grid gap-3">
+                {% if p.start_here %}
+                  <div>
+                    <div class="text-xs font-semibold text-zinc-300">Start here (next 10–15 min)</div>
+                    <ul class="mt-2 list-disc pl-5 text-sm text-zinc-300">
+                      {% for s in (p.start_here or [])[:5] %}
+                        <li>{{ s }}</li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                {% endif %}
                 <div>
                   <div class="text-xs font-semibold text-zinc-300">Blocks</div>
                   <ul class="mt-2 list-disc pl-5 text-sm text-zinc-300">
@@ -457,6 +499,32 @@
                     </ul>
                   </div>
                 {% endif %}
+                {% if p.rationale %}
+                  <div>
+                    <div class="text-xs font-semibold text-zinc-300">Why this plan</div>
+                    <ul class="mt-2 list-disc pl-5 text-sm text-zinc-300">
+                      {% for x in (p.rationale or []) %}
+                        <li>{{ x }}</li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                {% endif %}
+                {% if p.tradeoffs %}
+                  <div>
+                    <div class="text-xs font-semibold text-zinc-300">Tradeoffs</div>
+                    <ul class="mt-2 list-disc pl-5 text-sm text-zinc-300">
+                      {% for x in (p.tradeoffs or []) %}
+                        <li>{{ x }}</li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                {% endif %}
+                {% if p.stop_rule %}
+                  <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/35 p-3 text-xs text-zinc-300">
+                    <div class="font-semibold text-zinc-200">Stop rule</div>
+                    <div class="mt-1">{{ p.stop_rule }}</div>
+                  </div>
+                {% endif %}
               </div>
             </details>
           {% endfor %}
@@ -470,34 +538,57 @@
     </div>
 
     <div class="lg:col-span-1">
-      <div id="handoff" class="sticky-panel isolate z-10 rounded-3xl border border-zinc-800/80 bg-zinc-950 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] lg:sticky lg:top-24">
-        <div class="flex items-center justify-between">
-          <div class="text-sm font-semibold">Handoff</div>
+      <details
+        id="handoff"
+        data-persist="handoff"
+        data-default-open="closed"
+        class="sticky-panel isolate z-10 rounded-3xl border border-zinc-800/80 bg-zinc-950 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] lg:sticky lg:top-24"
+      >
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-4">
+          <div class="flex items-center gap-2">
+            <div class="text-sm font-semibold">Handoff</div>
+            {% if artifact %}
+              <div class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2.5 py-1 text-[11px] text-zinc-400">v{{ artifact.version }}</div>
+            {% endif %}
+          </div>
+          <div class="text-xs text-zinc-500">{% if artifact %}export{% else %}{% if run_status == 'running' %}generating{% else %}empty{% endif %}{% endif %}</div>
+        </summary>
+
+        <div class="mt-4">
           {% if artifact %}
-            <div class="text-xs text-zinc-500">v{{ artifact.version }}</div>
+            <div class="markdown text-sm">
+              {{ artifact_html | safe }}
+            </div>
+            {% if artifact.diff %}
+              <details class="mt-5 border-t border-zinc-800 pt-4" data-persist="handoff-diff" data-default-open="closed">
+                <summary class="cursor-pointer text-xs font-semibold text-zinc-300">View diff</summary>
+                <pre class="mt-2 overflow-auto rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-[11px] text-zinc-300">{{ artifact.diff }}</pre>
+              </details>
+            {% endif %}
+          {% else %}
+            <div class="text-sm text-zinc-400">
+              {% if run_status == 'running' %}Generating handoff…{% else %}No handoff artifact found.{% endif %}
+            </div>
           {% endif %}
         </div>
-        {% if artifact %}
-          <div class="markdown mt-4 text-sm">
-            {{ artifact_html | safe }}
-          </div>
-          {% if artifact.diff %}
-            <details class="mt-5 border-t border-zinc-800 pt-4">
-              <summary class="cursor-pointer text-xs font-semibold text-zinc-300">View diff</summary>
-              <pre class="mt-2 overflow-auto rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-[11px] text-zinc-300">{{ artifact.diff }}</pre>
-            </details>
-          {% endif %}
-        {% else %}
-          <div class="mt-4 text-sm text-zinc-400">
-            {% if run_status == 'running' %}Generating handoff…{% else %}No handoff artifact found.{% endif %}
-          </div>
-        {% endif %}
-      </div>
+      </details>
 
-      <details id="village-activity" class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]" {% if run_status == 'running' %}open{% endif %}>
+      <details
+        id="village-activity"
+        data-persist="village-activity"
+        data-default-open="closed"
+        class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
+      >
         <summary class="flex cursor-pointer list-none items-center justify-between">
           <div class="text-sm font-semibold">Village activity</div>
-          <div class="text-xs text-zinc-500">{% if run_status == 'running' %}live{% else %}details{% endif %}</div>
+          <div class="flex items-center gap-2 text-xs text-zinc-500">
+            {% if run_status == 'running' %}
+              <span class="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400/80"></span>
+              <span>live</span>
+            {% else %}
+              <span>details</span>
+            {% endif %}
+          </div>
         </summary>
 
         <div class="mt-4">

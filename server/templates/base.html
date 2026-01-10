@@ -154,8 +154,41 @@
           }
         }
 
+        function applyPersistedDetails(root) {
+          const detailsEls = (root || document).querySelectorAll("details[data-persist]");
+          for (const details of detailsEls) {
+            const key = details.getAttribute("data-persist");
+            if (!key) continue;
+            const storageKey = "details:" + key;
+            const defaultMode = details.getAttribute("data-default-open");
+            let saved;
+            try {
+              saved = window.localStorage ? localStorage.getItem(storageKey) : null;
+            } catch (_) {
+              saved = null;
+            }
+
+            if (saved === "open") details.open = true;
+            else if (saved === "closed") details.open = false;
+            else if (defaultMode === "open") details.open = true;
+            else if (defaultMode === "closed") details.open = false;
+
+            if (details.dataset.persistBound) continue;
+            details.dataset.persistBound = "1";
+            details.addEventListener("toggle", () => {
+              try {
+                if (window.localStorage) localStorage.setItem(storageKey, details.open ? "open" : "closed");
+              } catch (_) {}
+            });
+          }
+        }
+
         applyTimeFormatting(document);
-        document.body.addEventListener("htmx:afterSwap", (e) => applyTimeFormatting(e.target));
+        applyPersistedDetails(document);
+        document.body.addEventListener("htmx:afterSwap", (e) => {
+          applyTimeFormatting(e.target);
+          applyPersistedDetails(e.target);
+        });
 
         window.addEventListener("click", (e) => {
           const menu = document.getElementById("status-menu");

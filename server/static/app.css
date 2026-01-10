@@ -170,6 +170,13 @@ a {
   color: rgba(165, 180, 252, 1);
 }
 
+.markdown hr,
+.prose hr {
+  border: none;
+  border-top: 1px solid rgba(63, 63, 70, 0.7);
+  margin: 1.25em 0;
+}
+
 /* Optional polish */
 .htmx-fade-in {
   animation: htmxFadeIn 160ms ease-out;

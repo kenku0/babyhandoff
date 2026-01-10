@@ -41,6 +41,16 @@ def _top_evidence(logs: list[dict], *, log_type: str, limit: int = 2) -> list[di
     return out
 
 
+def _first_log_text(logs: list[dict], *, log_type: str) -> str | None:
+    for l in logs:
+        if l.get("type") != log_type:
+            continue
+        txt = str(l.get("text") or "").strip()
+        if txt:
+            return txt
+    return None
+
+
 def _score_proposal(
     archetype: Archetype,
     *,
@@ -86,37 +96,61 @@ def _score_proposal(
     return scores
 
 
-def _proposal_sleep_first(*, energy: EnergyLevel | None, deadline_risk: str, inventory_risk: str) -> dict[str, Any]:
+def _proposal_sleep_first(
+    *,
+    energy: EnergyLevel | None,
+    deadline_risk: str,
+    inventory_risk: str,
+    logs: list[dict] | None = None,
+) -> dict[str, Any]:
+    logs = logs or []
+    deadline_text = _first_log_text(logs, log_type="deadline")
+    inventory_text = _first_log_text(logs, log_type="inventory")
+    task_text = _first_log_text(logs, log_type="task")
+
     blocks = [
-        "Stabilize (5–10 min): water/snack + write the 3 priorities + set a timer",
-        "Recovery block (45–90 min) — phone on DND",
-        "Close one anxiety loop (20–45 min) only",
+        "Recovery block (60–90 min): timer on, phone away, lights low",
+        "Admin micro-sprint (10–20 min): start the nearest deadline (draft/save/submit)",
+        "Essentials (15–30 min): supplies/food in one stop (delivery/pickup if possible)",
     ]
     if deadline_risk in {"high", "medium"}:
-        blocks[2] = "Close one anxiety loop (30–45 min): clear the nearest deadline’s first step"
+        blocks[1] = "Admin block (20–30 min): start or finish the nearest deadline"
     if inventory_risk in {"high", "medium"}:
-        blocks[2] = "Close one anxiety loop (30–45 min): single-stop supply run (diapers/wipes/cream)"
+        blocks[2] = "Single-stop supply coverage (20–30 min): order/pickup/one-stop (diapers/wipes/cream)"
     top = [
-        "Protect one recovery block (minimum viable rest)",
-        "Remove the next deadline/supply surprise",
-        "Keep today small (no new rabbit holes)",
+        "Protect one recovery block (non-negotiable)",
+        "Make the nearest deadline safe (first concrete step)",
+        "Cover supplies/food so tomorrow doesn’t break",
     ]
     rationale = [
-        "Stabilize the next 12h: reduce cognitive load and prevent small risks from cascading.",
-        "Do the minimum set of actions that keeps tomorrow from getting harder.",
+        "Fatigue taxes decision-making; fewer choices beats a perfect plan.",
+        "Two small actions now prevent cascade failures (deadline stress + supply emergencies).",
     ]
     if energy == "low":
-        rationale.append("Energy is low; protecting a recovery block makes the rest of the plan more feasible.")
+        rationale.append("Energy is low; recovery makes the rest of the shift feasible.")
+    start_here: list[str] = [
+        "Set a 60–90 min recovery timer; put your phone across the room.",
+        "Write a 1-line rule: “Only 3 things: recover + deadline step + supplies.”",
+    ]
+    if deadline_text and deadline_risk != "none":
+        start_here.append(f"Deadline: “{deadline_text}” → do the first concrete step now (open, fill 3 fields, save draft).")
+    if inventory_text and inventory_risk != "none":
+        start_here.append(f"Supplies: “{inventory_text}” → add to cart/pickup list now (no browsing).")
+    if not (deadline_text or inventory_text) and task_text:
+        start_here.append(f"Essentials: “{task_text}” → pick delivery/pickup/one-stop and start it now.")
+    stop_rule = "Stop when the deadline is started and supplies are covered; then rest (everything else can wait)."
     tradeoffs = [
-        "Defer non-urgent errands and deep work; keep scope tight.",
-        "If you feel “behind”, resist adding tasks—write them down and re-run.",
+        "Defer non-urgent errands and deep work; keep scope tiny.",
+        "If you feel “behind”, write tasks down and re-run later—don’t expand this shift.",
     ]
     return {
         "archetype": "sleep_first",
-        "title": "Stability-first (minimum viable shift)",
+        "title": "Stability-first",
         "plan_blocks": blocks,
         "top_priorities": top,
         "rationale": rationale,
+        "start_here": start_here[:5],
+        "stop_rule": stop_rule,
         "tradeoffs": tradeoffs,
     }
 
@@ -179,10 +213,13 @@ def merge_llm_proposal(base: dict[str, Any], llm: dict[str, Any] | None) -> dict
     merged = dict(base)
     if isinstance(llm.get("title"), str) and llm["title"].strip():
         merged["title"] = llm["title"].strip()
-    for key in ["plan_blocks", "top_priorities", "rationale", "tradeoffs"]:
+    for key in ["plan_blocks", "top_priorities", "rationale", "tradeoffs", "start_here"]:
         value = llm.get(key)
         if isinstance(value, list) and any(isinstance(x, str) and x.strip() for x in value):
             merged[key] = [str(x).strip() for x in value if isinstance(x, str) and x.strip()]
+    stop_rule = llm.get("stop_rule")
+    if isinstance(stop_rule, str) and stop_rule.strip():
+        merged["stop_rule"] = stop_rule.strip()
     return merged
 
 
@@ -219,15 +256,24 @@ def _make_markdown(
     next_task = str(task_items[0].get("text") or "").strip() if task_items else ""
 
     lines.append("## Takeover Checklist (start here)")
-    lines.append("- **Scan risks:** confirm what’s actually urgent right now (not what feels loud).")
-    if energy == "low" or str(selected.get("archetype")) == "sleep_first":
-        lines.append("- **Protect recovery:** set a **45–90 min recovery block** (timer on). If you can’t sleep, do eyes-closed rest.")
+    start_here = selected.get("start_here") or []
+    if isinstance(start_here, list) and any(isinstance(x, str) and x.strip() for x in start_here):
+        for s in start_here[:6]:
+            if isinstance(s, str) and s.strip():
+                lines.append(f"- {s.strip()}")
+    else:
+        lines.append("- **Scan risks:** confirm what’s actually urgent right now (not what feels loud).")
+        if energy == "low" or str(selected.get("archetype")) == "sleep_first":
+            lines.append("- **Protect recovery:** set a **60–90 min recovery block** (timer on). If you can’t sleep, do eyes-closed rest.")
     if nearest_deadline:
         lines.append(f"- **Deadline:** {nearest_deadline} (do the first concrete step now).")
     if top_inventory:
         lines.append(f"- **Supplies:** {top_inventory} (one quick stop or add to delivery list).")
     if next_task and next_task not in {nearest_deadline}:
         lines.append(f"- If energy allows: {next_task}")
+    stop_rule = selected.get("stop_rule")
+    if isinstance(stop_rule, str) and stop_rule.strip():
+        lines.append(f"- **Stop rule:** {stop_rule.strip()}")
     lines.append("")
 
     lines.append("## Next 12h Plan (blocks)")
@@ -291,6 +337,13 @@ def proposal_to_markdown(proposal: dict[str, Any]) -> str:
     if provider or model:
         lines.append(f"_Source: {provider or 'unknown'}" + (f" · {model}_" if model else "_"))
         lines.append("")
+    start_here = proposal.get("start_here") or []
+    if isinstance(start_here, list) and any(isinstance(x, str) and x.strip() for x in start_here):
+        lines.append("**Start here (next 10–15 min)**")
+        for s in start_here[:6]:
+            if isinstance(s, str) and s.strip():
+                lines.append(f"- {s.strip()}")
+        lines.append("")
     lines.append("**Blocks**")
     for b in proposal.get("plan_blocks") or []:
         lines.append(f"- {b}")
@@ -302,6 +355,11 @@ def proposal_to_markdown(proposal: dict[str, Any]) -> str:
     lines.append("**Rationale**")
     for r in proposal.get("rationale") or []:
         lines.append(f"- {r}")
+    stop_rule = proposal.get("stop_rule")
+    if isinstance(stop_rule, str) and stop_rule.strip():
+        lines.append("")
+        lines.append("**Stop rule**")
+        lines.append(f"- {stop_rule.strip()}")
     tradeoffs = proposal.get("tradeoffs") or []
     if tradeoffs:
         lines.append("")
@@ -444,11 +502,17 @@ def build_council_transcript_markdown_from_messages(
         when = str(created_at) if created_at else ""
         role = str(m.get("role") or "").strip()
         meta = m.get("meta") or {}
+        kind = str(meta.get("kind") or "").strip()
+        archetype = str(meta.get("archetype") or "").strip()
         provider = str(meta.get("provider") or "").strip()
         model = str(meta.get("model") or "").strip()
         judge_mode = str(meta.get("judge_mode") or "").strip()
         judge_model = str(meta.get("judge_model") or "").strip()
         extras: list[str] = []
+        if kind:
+            extras.append(kind)
+        if archetype:
+            extras.append(archetype.replace("_", "-"))
         if provider:
             extras.append(provider + (f"/{model}" if model else ""))
         if judge_mode:
@@ -480,7 +544,7 @@ def run_council(
     inventory_risk = infer_inventory_risk(logs)
 
     base_proposals = [
-        _proposal_sleep_first(energy=energy, deadline_risk=deadline_risk, inventory_risk=inventory_risk),
+        _proposal_sleep_first(energy=energy, deadline_risk=deadline_risk, inventory_risk=inventory_risk, logs=logs),
         _proposal_errands_first(energy=energy, inventory_risk=inventory_risk),
         _proposal_admin_first(energy=energy, deadline_risk=deadline_risk, inventory_risk=inventory_risk),
     ]

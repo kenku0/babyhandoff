@@ -10,3 +10,5 @@ __pycache__/
 node_modules/
 dist/
 build/
+Gemini_Generated_Image_*.png
+server/static/GeminiGenerated*.png
