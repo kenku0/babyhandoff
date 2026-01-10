@@ -51,6 +51,27 @@ def _first_log_text(logs: list[dict], *, log_type: str) -> str | None:
     return None
 
 
+def _timeline_totals(timeline: list[dict[str, Any]] | None) -> tuple[int, int]:
+    if not timeline:
+        return (0, 0)
+    min_total = 0
+    max_total = 0
+    for item in timeline:
+        try:
+            mn = int(item.get("min") or 0)
+        except Exception:
+            mn = 0
+        try:
+            mx = int(item.get("max") or 0)
+        except Exception:
+            mx = 0
+        if mx <= 0:
+            mx = mn
+        min_total += max(mn, 0)
+        max_total += max(mx, 0)
+    return (min_total, max_total)
+
+
 def _score_proposal(
     archetype: Archetype,
     *,
@@ -108,15 +129,23 @@ def _proposal_sleep_first(
     inventory_text = _first_log_text(logs, log_type="inventory")
     task_text = _first_log_text(logs, log_type="task")
 
+    admin_min, admin_max = (10, 20)
+    if deadline_risk in {"high", "medium"}:
+        admin_min, admin_max = (20, 30)
+
+    supplies_min, supplies_max = (15, 30)
+    if inventory_risk in {"high", "medium"}:
+        supplies_min, supplies_max = (20, 30)
+
     blocks = [
         "Recovery block (60–90 min): timer on, phone away, lights low",
-        "Admin micro-sprint (10–20 min): start the nearest deadline (draft/save/submit)",
+        f"Admin micro-sprint ({admin_min}–{admin_max} min): start the nearest deadline (draft/save/submit)",
         "Essentials (15–30 min): supplies/food in one stop (delivery/pickup if possible)",
     ]
     if deadline_risk in {"high", "medium"}:
         blocks[1] = "Admin block (20–30 min): start or finish the nearest deadline"
     if inventory_risk in {"high", "medium"}:
-        blocks[2] = "Single-stop supply coverage (20–30 min): order/pickup/one-stop (diapers/wipes/cream)"
+        blocks[2] = f"Single-stop supply coverage ({supplies_min}–{supplies_max} min): order/pickup/one-stop (diapers/wipes/cream)"
     top = [
         "Protect one recovery block (non-negotiable)",
         "Make the nearest deadline safe (first concrete step)",
@@ -139,6 +168,22 @@ def _proposal_sleep_first(
     if not (deadline_text or inventory_text) and task_text:
         start_here.append(f"Essentials: “{task_text}” → pick delivery/pickup/one-stop and start it now.")
     stop_rule = "Stop when the deadline is started and supplies are covered; then rest (everything else can wait)."
+    wins: list[str] = ["Recovery protected", "Deadline stabilized", "Supplies covered"]
+    if deadline_risk == "none":
+        wins[1] = "Admin anxiety reduced"
+    if inventory_risk == "none":
+        wins[2] = "Essentials covered"
+
+    timeline = [
+        {"label": "Recovery block", "min": 60, "max": 90, "tag": "recovery"},
+        {"label": "Admin sprint (nearest deadline)", "min": admin_min, "max": admin_max, "tag": "admin"},
+        {"label": "Supplies/food (one stop)", "min": supplies_min, "max": supplies_max, "tag": "errands"},
+    ]
+    tmin, tmax = _timeline_totals(timeline)
+    if_then = [
+        "If energy drops further, do recovery first and shorten everything else to a single 10‑min step.",
+        "If supplies are already covered, skip errands and take a second short rest block.",
+    ]
     tradeoffs = [
         "Defer non-urgent errands and deep work; keep scope tiny.",
         "If you feel “behind”, write tasks down and re-run later—don’t expand this shift.",
@@ -147,18 +192,30 @@ def _proposal_sleep_first(
         "archetype": "sleep_first",
         "title": "Stability-first",
         "plan_blocks": blocks,
+        "timeline": timeline,
+        "timeline_total_min": tmin,
+        "timeline_total_max": tmax,
+        "wins": wins,
         "top_priorities": top,
         "rationale": rationale,
         "start_here": start_here[:5],
         "stop_rule": stop_rule,
+        "if_then": if_then,
         "tradeoffs": tradeoffs,
     }
 
 
 def _proposal_errands_first(*, energy: EnergyLevel | None, inventory_risk: str) -> dict[str, Any]:
-    blocks = ["One errands window (45–90 min, one loop)", "Quick admin block (15–30 min)", "Minimal home reset (15 min)"]
+    err_min, err_max = (45, 90)
     if inventory_risk in {"high", "medium"}:
-        blocks[0] = "One errands window (45–75 min): supplies first, groceries second"
+        err_min, err_max = (45, 75)
+    blocks = [
+        f"One errands window ({err_min}–{err_max} min, one loop)",
+        "Quick admin block (15–30 min)",
+        "Minimal home reset (15 min)",
+    ]
+    if inventory_risk in {"high", "medium"}:
+        blocks[0] = f"One errands window ({err_min}–{err_max} min): supplies first, groceries second"
     top = ["Buy essentials (supplies + simple food)", "Prevent a supply emergency tomorrow", "Knock out one admin task if time allows"]
     rationale = [
         "Batching errands reduces overhead and prevents running out at a bad time.",
@@ -166,6 +223,23 @@ def _proposal_errands_first(*, energy: EnergyLevel | None, inventory_risk: str) 
     ]
     if energy == "low":
         rationale.append("Energy is low; keep the loop to one stop if possible.")
+    start_here = [
+        "Pick ONE store/pickup (no browsing).",
+        "Write a 60‑second list: diapers/wipes/cream + protein + easy snacks.",
+        "Set a hard stop time before you leave.",
+    ]
+    stop_rule = "Stop after the loop + drop-off. No extra aisles."
+    wins = ["Essentials purchased", "Supply risk reduced", "Home reset started"]
+    timeline = [
+        {"label": "Errands loop (one stop)", "min": err_min, "max": err_max, "tag": "errands"},
+        {"label": "Admin quick hit", "min": 15, "max": 30, "tag": "admin"},
+        {"label": "Home reset", "min": 15, "max": 15, "tag": "home"},
+    ]
+    tmin, tmax = _timeline_totals(timeline)
+    if_then = [
+        "If the store is crowded, switch to pickup/delivery and reclaim 20–30 minutes.",
+        "If energy is low, skip the home reset and rest after drop‑off.",
+    ]
     tradeoffs = [
         "Recovery likely suffers; schedule a short rest afterward.",
         "Skip anything that adds decision fatigue (browse-y stores, long lists).",
@@ -174,8 +248,15 @@ def _proposal_errands_first(*, energy: EnergyLevel | None, inventory_risk: str) 
         "archetype": "errands_first",
         "title": "Errands-first",
         "plan_blocks": blocks,
+        "timeline": timeline,
+        "timeline_total_min": tmin,
+        "timeline_total_max": tmax,
+        "wins": wins,
         "top_priorities": top,
         "rationale": rationale,
+        "start_here": start_here,
+        "stop_rule": stop_rule,
+        "if_then": if_then,
         "tradeoffs": tradeoffs,
     }
 
@@ -193,6 +274,28 @@ def _proposal_admin_first(*, energy: EnergyLevel | None, deadline_risk: str, inv
     ]
     if inventory_risk in {"high", "medium"}:
         rationale.append("Supplies are trending low; include one essential pickup.")
+    start_here = [
+        "Open the nearest deadline/form/email thread.",
+        "Set a 25–30 min timer and do the first concrete step (draft/save/submit).",
+        "Write the 1 essential supply/food action you’ll do later (no more).",
+    ]
+    stop_rule = "Hard stop at 60 minutes total admin work; then either focus or rest."
+    wins = ["Deadline anxiety reduced", "Focus protected", "Essentials covered"]
+    focus_min, focus_max = (60, 90)
+    if energy == "low":
+        focus_min, focus_max = (30, 45)
+    admin_min, admin_max = (30, 60) if deadline_risk != "none" else (20, 30)
+    essentials_min, essentials_max = (15, 30)
+    timeline = [
+        {"label": "Admin sprint (deadlines/logistics)", "min": admin_min, "max": admin_max, "tag": "admin"},
+        {"label": "Focus block (school/work)", "min": focus_min, "max": focus_max, "tag": "focus"},
+        {"label": "Essentials (supplies/food)", "min": essentials_min, "max": essentials_max, "tag": "errands"},
+    ]
+    tmin, tmax = _timeline_totals(timeline)
+    if_then = [
+        "If the deadline is larger than expected, stop at ‘draft saved’ and re-run the council.",
+        "If energy dips, swap focus for a recovery block and keep only one admin step.",
+    ]
     tradeoffs = [
         "Easy to overrun; set a hard stop time before you start.",
         "If supplies are low, don’t ignore them—bundle one essential action.",
@@ -201,8 +304,15 @@ def _proposal_admin_first(*, energy: EnergyLevel | None, deadline_risk: str, inv
         "archetype": "admin_first",
         "title": "Admin-first",
         "plan_blocks": blocks,
+        "timeline": timeline,
+        "timeline_total_min": tmin,
+        "timeline_total_max": tmax,
+        "wins": wins,
         "top_priorities": top,
         "rationale": rationale,
+        "start_here": start_here,
+        "stop_rule": stop_rule,
+        "if_then": if_then,
         "tradeoffs": tradeoffs,
     }
 
@@ -213,13 +323,16 @@ def merge_llm_proposal(base: dict[str, Any], llm: dict[str, Any] | None) -> dict
     merged = dict(base)
     if isinstance(llm.get("title"), str) and llm["title"].strip():
         merged["title"] = llm["title"].strip()
-    for key in ["plan_blocks", "top_priorities", "rationale", "tradeoffs", "start_here"]:
+    for key in ["plan_blocks", "top_priorities", "rationale", "tradeoffs", "start_here", "wins", "if_then"]:
         value = llm.get(key)
         if isinstance(value, list) and any(isinstance(x, str) and x.strip() for x in value):
             merged[key] = [str(x).strip() for x in value if isinstance(x, str) and x.strip()]
     stop_rule = llm.get("stop_rule")
     if isinstance(stop_rule, str) and stop_rule.strip():
         merged["stop_rule"] = stop_rule.strip()
+    timeline = llm.get("timeline")
+    if isinstance(timeline, list) and timeline:
+        merged["timeline"] = timeline
     return merged
 
 
@@ -240,6 +353,13 @@ def _make_markdown(
     lines.append("### Why this plan won")
     for r in (selected.get("rationale") or [])[:3]:
         lines.append(f"- {r}")
+    wins = selected.get("wins") or []
+    if isinstance(wins, list) and any(isinstance(x, str) and x.strip() for x in wins):
+        lines.append("")
+        lines.append("### What you get")
+        for w in wins[:5]:
+            if isinstance(w, str) and w.strip():
+                lines.append(f"- {w.strip()}")
     tradeoffs = (selected.get("tradeoffs") or [])[:3]
     if tradeoffs:
         lines.append("")
@@ -289,6 +409,13 @@ def _make_markdown(
     lines.append(f"- Inventory risk: **{inventory_risk}**" + (f" · {top_inventory}" if top_inventory else ""))
     lines.append(f"- Energy: **{energy or 'unknown'}**")
     lines.append("- If the plan feels wrong in reality: add one note and re-run the council.")
+    if_then = selected.get("if_then") or []
+    if isinstance(if_then, list) and any(isinstance(x, str) and x.strip() for x in if_then):
+        lines.append("")
+        lines.append("## If/then (replan cues)")
+        for it in if_then[:5]:
+            if isinstance(it, str) and it.strip():
+                lines.append(f"- {it.strip()}")
     lines.append("")
     lines.append("## Notes (raw)")
     for l in logs[-12:]:
@@ -344,6 +471,13 @@ def proposal_to_markdown(proposal: dict[str, Any]) -> str:
             if isinstance(s, str) and s.strip():
                 lines.append(f"- {s.strip()}")
         lines.append("")
+    wins = proposal.get("wins") or []
+    if isinstance(wins, list) and any(isinstance(x, str) and x.strip() for x in wins):
+        lines.append("**What you get**")
+        for w in wins[:6]:
+            if isinstance(w, str) and w.strip():
+                lines.append(f"- {w.strip()}")
+        lines.append("")
     lines.append("**Blocks**")
     for b in proposal.get("plan_blocks") or []:
         lines.append(f"- {b}")
@@ -360,6 +494,13 @@ def proposal_to_markdown(proposal: dict[str, Any]) -> str:
         lines.append("")
         lines.append("**Stop rule**")
         lines.append(f"- {stop_rule.strip()}")
+    if_then = proposal.get("if_then") or []
+    if isinstance(if_then, list) and any(isinstance(x, str) and x.strip() for x in if_then):
+        lines.append("")
+        lines.append("**If/then**")
+        for it in if_then[:6]:
+            if isinstance(it, str) and it.strip():
+                lines.append(f"- {it.strip()}")
     tradeoffs = proposal.get("tradeoffs") or []
     if tradeoffs:
         lines.append("")
@@ -604,6 +745,7 @@ def run_council(
         "summary": " ".join(
             [
                 f"Selected {winner['title']} based on rubric scoring.",
+                f"Signals: energy {energy or 'unknown'} · deadline {deadline_risk} · inventory {inventory_risk}.",
                 *reasons,
             ]
         ).strip(),

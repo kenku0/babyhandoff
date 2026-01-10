@@ -17,6 +17,7 @@ DEFAULT_AGENTS = [
     {"name": "ErrandsPlanner", "skills": ["plan_errands_first"], "kind": "planner"},
     {"name": "AdminPlanner", "skills": ["plan_admin_first"], "kind": "planner"},
     {"name": "Referee", "skills": ["score_rubric", "select_plan"], "kind": "judge"},
+    {"name": "Roundtable", "skills": ["critic_vote"], "kind": "critic"},
     {"name": "HandoffWriter", "skills": ["write_markdown"], "kind": "writer"},
 ]
 

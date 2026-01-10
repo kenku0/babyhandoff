@@ -107,7 +107,7 @@
       </div>
     </div>
 
-    <div class="mt-5 border-t border-zinc-800/80 pt-4">
+    <div id="what-if" class="mt-5 border-t border-zinc-800/80 pt-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="text-sm font-semibold">What-if re-run</div>
         <form action="/shifts/{{ shift_id }}/runs" method="post" class="flex flex-wrap items-center gap-2">
@@ -177,10 +177,9 @@
         closeExportMenu();
       }
 
-      const handoffBtn = document.getElementById("copy-handoff");
-      if (handoffBtn) handoffBtn.addEventListener("click", () => copyFromUrl(handoffBtn));
-      const councilBtn = document.getElementById("copy-council");
-      if (councilBtn) councilBtn.addEventListener("click", () => copyFromUrl(councilBtn));
+      document.querySelectorAll("button[data-url]").forEach((btn) => {
+        btn.addEventListener("click", () => copyFromUrl(btn));
+      });
       const linkBtn = document.getElementById("copy-link");
       if (linkBtn) {
         linkBtn.addEventListener("click", async () => {

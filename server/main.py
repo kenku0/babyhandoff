@@ -39,8 +39,10 @@ from server.services.council_gemini import generate_proposal_gemini
 from server.services.change_streams import ChangeStreamWorker
 from server.services.context_packs import build_context_pack
 from server.services.markdown_render import render_markdown_safe
+from server.services.roundtable import generate_roundtable_vote, parse_vote, synthesize_roundtable_votes
 from server.services.referee_openai import score_decision_openai
 from server.services.tagger_openai import tag_items_heuristic, tag_items_openai
+from server.services.demo_seed import reset_demo_data, seed_demo_month
 from server.settings import Settings, load_settings
 
 
@@ -120,6 +122,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             app.state.indexes_ok = False
             app.state.indexes_error = str(e)
+
+        # Demo convenience: if running in demo mode and the DB is empty, seed a month of shifts.
+        if settings.demo_mode:
+            try:
+                existing = await mongo.db["shifts"].count_documents({})
+                if existing == 0:
+                    await seed_demo_month(mongo, days=30, shift_count=10)
+            except Exception:
+                # Never block app startup on demo seed.
+                pass
 
         stop_event = asyncio.Event()
         worker = ChangeStreamWorker(mongo.db)
@@ -297,7 +309,7 @@ async def demo_shift(request: Request):
     logs_repo = LogsRepo(mongo.db)
     shifts_repo = ShiftsRepo(mongo.db)
 
-    shift_id = await shifts_repo.create_shift(title="Demo shift — Tonight handoff")
+    shift_id = await shifts_repo.create_shift(title="Demo shift — Tonight handoff", extra={"demo": True})
     for t, txt in SAMPLE_SHIFT_LOGS:
         await logs_repo.add(shift_id, t, txt)
     await shifts_repo.touch(shift_id)
@@ -308,6 +320,17 @@ async def demo_shift(request: Request):
         message="Demo shift inserted; watchers recomputed shift state. (fallback)",
     )
     return RedirectResponse(url=f"/shifts/{shift_id}", status_code=303)
+
+
+@app.post("/demo/reset")
+async def demo_reset(request: Request):
+    settings = _settings(request)
+    if not settings.demo_mode:
+        return Response(content="Demo mode is disabled.", status_code=403)
+    mongo = _mongo(request)
+    await reset_demo_data(mongo)
+    await seed_demo_month(mongo, days=30, shift_count=10)
+    return RedirectResponse(url="/", status_code=303)
 
 
 @app.post("/shifts/new")
@@ -321,6 +344,15 @@ async def rename_shift(request: Request, shift_id: str, title: str = Form(...)):
     mongo = _mongo(request)
     await ShiftsRepo(mongo.db).rename(shift_id, title)
     return RedirectResponse(url=f"/shifts/{shift_id}", status_code=303)
+
+
+@app.post("/shifts/{shift_id}/delete")
+async def delete_shift(request: Request, shift_id: str):
+    mongo = _mongo(request)
+    await ShiftsRepo(mongo.db).delete_cascade(shift_id)
+    if request.headers.get("hx-request"):
+        return Response(content="", status_code=200)
+    return RedirectResponse(url="/", status_code=303)
 
 
 @app.get("/shifts/{shift_id}", response_class=HTMLResponse)
@@ -559,6 +591,8 @@ async def _execute_council_run(
                     "max_attempts": planner_max_attempts,
                     "error": last_error,
                     "fallback": True,
+                    "provider": "heuristic",
+                    "provider_fallback_from": provider,
                 }
                 await events.add(
                     shift_id=shift_id,
@@ -614,6 +648,7 @@ async def _execute_council_run(
                         "max_attempts": 1,
                         "error": "No LLM API keys configured for this run.",
                         "fallback": True,
+                        "provider": "heuristic",
                     }
                     await events.add(
                         shift_id=shift_id,
@@ -733,6 +768,8 @@ async def _execute_council_run(
                     "max_attempts": planner_max_attempts,
                     "error": last_error,
                     "fallback": True,
+                    "provider": "heuristic",
+                    "provider_fallback_from": primary_provider,
                     "providers_tried": [p for p, _, _, _ in candidates],
                 }
                 await events.add(
@@ -779,7 +816,7 @@ async def _execute_council_run(
                     },
                 )
             for archetype in ["sleep_first", "errands_first", "admin_first"]:
-                planner_meta[archetype] = {"llm_used": False, "attempts": 0, "max_attempts": 1}
+                planner_meta[archetype] = {"llm_used": False, "attempts": 0, "max_attempts": 1, "provider": "heuristic"}
 
         output = run_council(
             shift_id=shift_id,
@@ -883,7 +920,14 @@ async def _execute_council_run(
                 )
 
         decision_id = await DecisionsRepo(mongo.db).upsert_for_run(run_id, decision)
-        await tasks.mark_completed(task_ids["score_and_select"], outputs={"decision_id": decision_id})
+        await tasks.mark_completed(
+            task_ids["score_and_select"],
+            outputs={
+                "decision_id": decision_id,
+                "judge_mode": decision.get("judge_mode") if isinstance(decision, dict) else None,
+                "judge_model": decision.get("judge_model") if isinstance(decision, dict) else None,
+            },
+        )
 
         prev = await artifacts_repo.latest_for_shift(shift_id, kind="handoff_markdown")
         prev_id = str(prev["_id"]) if prev else None
@@ -957,6 +1001,106 @@ async def _execute_council_run(
                     "context_logs": len(context_logs),
                     **planner_meta.get("admin_first", {}),
                 },
+            )
+
+        # Roundtable: model(s) vote + critique for demo clarity (runs after proposals are recorded).
+        await tasks.mark_running(
+            task_ids["roundtable"],
+            attempt=1,
+            inputs={
+                "council_mode": council_mode,
+                "providers": ["openai", "anthropic", "gemini"],
+            },
+        )
+        roundtable_count = 0
+        try:
+            selected = str(decision.get("selected_archetype") or "")
+            energy_for_prompt = context_pack.get("energy_override") if isinstance(context_pack, dict) else None
+            radar = context_pack.get("radar") if isinstance(context_pack, dict) else {}
+            deadline_risk = str((radar or {}).get("deadline_risk") or "")
+            inventory_risk = str((radar or {}).get("inventory_risk") or "")
+            votes: list[dict[str, Any]] = []
+            if council_mode in {"openai", "anthropic", "gemini", "multi"} and (
+                settings.openai_api_key or settings.anthropic_api_key or settings.gemini_api_key
+            ):
+                providers: list[tuple[str, str, str]] = []
+                if settings.openai_api_key:
+                    providers.append(("openai", settings.openai_model, settings.openai_api_key))
+                if settings.anthropic_api_key:
+                    providers.append(("anthropic", settings.anthropic_model, settings.anthropic_api_key))
+                if settings.gemini_api_key:
+                    providers.append(("gemini", settings.gemini_model, settings.gemini_api_key))
+                for provider, model, api_key in providers[:3]:
+                    try:
+                        text = await asyncio.to_thread(
+                            generate_roundtable_vote,
+                            provider=provider,  # type: ignore[arg-type]
+                            api_key=api_key,
+                            model=model,
+                            proposals=output.proposals,
+                            selected_archetype=selected,
+                            energy=energy_for_prompt,
+                            deadline_risk=deadline_risk or "unknown",
+                            inventory_risk=inventory_risk or "unknown",
+                            timeout_s=settings.agent_timeout_seconds,
+                        )
+                        vote = parse_vote(text) or ""
+                        votes.append(
+                            {
+                                "provider": provider,
+                                "model": model,
+                                "vote": vote,
+                                "agree": bool(vote and vote == selected),
+                                "content": text.strip(),
+                            }
+                        )
+                    except Exception as e:
+                        votes.append(
+                            {
+                                "provider": provider,
+                                "model": model,
+                                "vote": "",
+                                "agree": False,
+                                "content": f"VOTE: (unavailable)\nWHY:\n- {str(e)}\nCONCERN: n/a\nTWEAK: n/a",
+                            }
+                        )
+            else:
+                votes = synthesize_roundtable_votes(
+                    proposals=output.proposals,
+                    energy=energy_for_prompt,
+                    deadline_risk=deadline_risk or "unknown",
+                    inventory_risk=inventory_risk or "unknown",
+                )
+                for v in votes:
+                    v["agree"] = bool(v.get("vote") and v.get("vote") == selected)
+
+            for v in votes:
+                await messages.add(
+                    shift_id=shift_id,
+                    run_id=run_id,
+                    task_id=task_ids.get("roundtable"),
+                    sender=task_agents.get("roundtable", "Roundtable"),
+                    role="assistant",
+                    content=str(v.get("content") or "").strip(),
+                    meta={
+                        "kind": "roundtable_vote",
+                        "provider": v.get("provider"),
+                        "model": v.get("model"),
+                        "vote": v.get("vote"),
+                        "agree": v.get("agree"),
+                        "selected_archetype": selected,
+                    },
+                )
+                roundtable_count += 1
+            await tasks.mark_completed(
+                task_ids["roundtable"],
+                outputs={"votes": roundtable_count, "selected_archetype": selected},
+            )
+        except Exception as e:
+            await tasks.mark_failed(
+                task_ids["roundtable"],
+                error={"type": type(e).__name__, "message": str(e)},
+                outputs={"votes": roundtable_count},
             )
 
         await messages.add(
@@ -1234,6 +1378,7 @@ async def create_run(
         ("plan_sleep_first", "SleepPlanner", "plan_sleep_first"),
         ("plan_errands_first", "ErrandsPlanner", "plan_errands_first"),
         ("plan_admin_first", "AdminPlanner", "plan_admin_first"),
+        ("roundtable", "Roundtable", "critic_vote"),
         ("score_and_select", "Referee", "score_rubric"),
         ("write_handoff", "HandoffWriter", "write_markdown"),
     ]
@@ -1313,10 +1458,16 @@ async def _build_run_template_data(mongo: Mongo, *, shift_id: str, run_id: str, 
         if e.get("run_id") == run_id
     ]
 
+    run_messages = await MessagesRepo(mongo.db).list_for_run(run_id, limit=220)
+    roundtable_votes: list[dict] = []
+    for m in run_messages:
+        meta = m.get("meta") or {}
+        if meta.get("kind") == "roundtable_vote":
+            roundtable_votes.append(m)
+
     live_council_html = ""
     live_council_count = 0
     if not council_artifact:
-        run_messages = await MessagesRepo(mongo.db).list_for_run(run_id, limit=200)
         live_council_count = len(run_messages)
         if run_messages:
             live_council_md = build_council_transcript_markdown_from_messages(
@@ -1348,6 +1499,7 @@ async def _build_run_template_data(mongo: Mongo, *, shift_id: str, run_id: str, 
         "council_html": council_html,
         "live_council_html": live_council_html,
         "live_council_count": live_council_count,
+        "roundtable_votes": roundtable_votes,
         "events": run_events,
     }
 

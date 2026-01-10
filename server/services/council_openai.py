@@ -41,11 +41,13 @@ Return ONLY valid JSON with keys:
 {{
   "title": string,
   "start_here": string[],
+  "wins": string[],
   "plan_blocks": string[],
   "top_priorities": string[],
   "rationale": string[],
   "tradeoffs": string[],
-  "stop_rule": string
+  "stop_rule": string,
+  "if_then": string[]
 }}
 """
 

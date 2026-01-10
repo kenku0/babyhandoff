@@ -53,6 +53,17 @@ a {
   line-height: 1.7;
 }
 
+.prose strong,
+.markdown strong {
+  color: rgb(250, 250, 250);
+  font-weight: 650;
+}
+
+.prose em,
+.markdown em {
+  color: rgba(228, 228, 231, 0.92);
+}
+
 .prose h1,
 .prose h2,
 .prose h3,
@@ -168,6 +179,37 @@ a {
 .prose a:hover,
 .markdown a:hover {
   color: rgba(165, 180, 252, 1);
+}
+
+.plan-timeline-item {
+  position: relative;
+  display: flex;
+  gap: 0.75rem;
+  padding-left: 0.125rem;
+}
+
+.plan-timeline-item::before {
+  content: "";
+  position: absolute;
+  left: 0.5rem;
+  top: 0.75rem;
+  bottom: -0.75rem;
+  width: 1px;
+  background: rgba(63, 63, 70, 0.75);
+}
+
+.plan-timeline-item:last-child::before {
+  bottom: 0.75rem;
+}
+
+.plan-timeline-dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.12);
+  margin-top: 0.25rem;
+  flex: none;
 }
 
 .markdown hr,

@@ -18,13 +18,21 @@ class LogsRepo:
     def __init__(self, db: AsyncIOMotorDatabase) -> None:
         self._col = db["logs"]
 
-    async def add(self, shift_id: str, log_type: LogType, text: str, *, tags: list[str] | None = None) -> str:
+    async def add(
+        self,
+        shift_id: str,
+        log_type: LogType,
+        text: str,
+        *,
+        tags: list[str] | None = None,
+        created_at: datetime | None = None,
+    ) -> str:
         doc = {
             "shift_id": shift_id,
             "type": log_type,
             "tags": tags or [log_type],
             "text": text,
-            "created_at": _now(),
+            "created_at": created_at or _now(),
         }
         result = await self._col.insert_one(doc)
         return str(result.inserted_id)
