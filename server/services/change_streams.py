@@ -41,7 +41,11 @@ class ChangeStreamWorker:
                                 event_type="agent_wakeup",
                                 agent="RiskRadar",
                                 message="New log inserted; watchers recomputed shift state.",
-                                meta={"log_id": str(full_doc.get("_id")), "log_type": full_doc.get("type")},
+                                meta={
+                                    "log_id": str(full_doc.get("_id")),
+                                    "log_type": full_doc.get("type"),
+                                    "log_tags": full_doc.get("tags") or [],
+                                },
                             )
                             logs = await logs_repo.list_for_shift(shift_id, limit=200)
                             radar = run_risk_radar(logs)

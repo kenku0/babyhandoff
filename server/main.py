@@ -28,6 +28,7 @@ from server.repo.indexes import ensure_indexes
 from server.services.council import (
     build_council_transcript_markdown_from_messages,
     decision_to_markdown,
+    make_handoff_markdown_from_proposals,
     proposal_to_markdown,
     run_council,
     unified_diff,
@@ -38,6 +39,8 @@ from server.services.council_gemini import generate_proposal_gemini
 from server.services.change_streams import ChangeStreamWorker
 from server.services.context_packs import build_context_pack
 from server.services.markdown_render import render_markdown_safe
+from server.services.referee_openai import score_decision_openai
+from server.services.tagger_openai import tag_items_heuristic, tag_items_openai
 from server.settings import Settings, load_settings
 
 
@@ -149,12 +152,14 @@ app.mount("/static", StaticFiles(directory="server/static"), name="static")
 templates = Jinja2Templates(directory="server/templates")
 
 SAMPLE_SHIFT_LOGS: list[tuple[str, str]] = [
-    ("note", "Slept ~3–4 hours broken; feeling low energy."),
-    ("deadline", "Submit daycare deposit form by tomorrow 5pm."),
-    ("task", "Pick up diapers + wipes today."),
+    ("note", "Slept ~3–4 hours broken; energy feels low."),
+    ("note", "Solo parent until ~7pm; need a low-cognitive-load plan."),
+    ("deadline", "Submit daycare deposit form by tomorrow 5pm (needs bank login)."),
+    ("note", "Hard constraint: on laptop 3:00–4:00pm for a class call."),
+    ("task", "Pick up diapers + wipes today (one quick stop)."),
     ("inventory", "Wipes < 1 day; diaper cream almost out."),
-    ("note", "Part-time class assignment due in 2 days; need 60–90 min focus block."),
     ("task", "Groceries: protein + easy snacks (15 min list)."),
+    ("note", "If there’s a 60–90 min quiet window, use it for a recovery block."),
 ]
 
 
@@ -247,6 +252,10 @@ async def health(request: Request):
                 "mode": settings.council_mode,
                 "openai_model": settings.openai_model,
                 "openai_key_configured": bool(settings.openai_api_key),
+                "anthropic_model": settings.anthropic_model,
+                "anthropic_key_configured": bool(settings.anthropic_api_key),
+                "gemini_model": settings.gemini_model,
+                "gemini_key_configured": bool(settings.gemini_api_key),
             },
         }
     )
@@ -257,6 +266,25 @@ async def home(request: Request):
     mongo = _mongo(request)
     shifts_repo = ShiftsRepo(mongo.db)
     shifts = await shifts_repo.list_recent(limit=20)
+
+    logs_col = mongo.db["logs"]
+    runs_col = mongo.db["runs"]
+    for s in shifts:
+        sid = str(s.get("_id") or "")
+        if not sid:
+            continue
+        s["log_count"] = await logs_col.count_documents({"shift_id": sid})
+        s["run_count"] = await runs_col.count_documents({"shift_id": sid})
+        last_run = await runs_col.find_one({"shift_id": sid}, sort=[("created_at", -1)])
+        if last_run:
+            s["last_run_status"] = str(last_run.get("status") or "").lower()
+            created = last_run.get("created_at")
+            if created is not None:
+                try:
+                    s["last_run_at_iso"] = created.isoformat()
+                except Exception:
+                    pass
+
     return templates.TemplateResponse(
         request,
         "home.html",
@@ -269,7 +297,7 @@ async def demo_shift(request: Request):
     logs_repo = LogsRepo(mongo.db)
     shifts_repo = ShiftsRepo(mongo.db)
 
-    shift_id = await shifts_repo.create_shift()
+    shift_id = await shifts_repo.create_shift(title="Demo shift — Tonight handoff")
     for t, txt in SAMPLE_SHIFT_LOGS:
         await logs_repo.add(shift_id, t, txt)
     await shifts_repo.touch(shift_id)
@@ -286,6 +314,12 @@ async def demo_shift(request: Request):
 async def new_shift(request: Request):
     mongo = _mongo(request)
     shift_id = await ShiftsRepo(mongo.db).create_shift()
+    return RedirectResponse(url=f"/shifts/{shift_id}", status_code=303)
+
+@app.post("/shifts/{shift_id}/rename")
+async def rename_shift(request: Request, shift_id: str, title: str = Form(...)):
+    mongo = _mongo(request)
+    await ShiftsRepo(mongo.db).rename(shift_id, title)
     return RedirectResponse(url=f"/shifts/{shift_id}", status_code=303)
 
 
@@ -419,22 +453,46 @@ async def _execute_council_run(
         proposal_overrides: dict[str, dict] = {}
         planner_meta: dict[str, dict] = {}
 
-        use_openai = settings.council_mode == "openai" and bool(settings.openai_api_key)
-        planner_max_attempts = max(1, 1 + max(0, settings.agent_max_retries)) if use_openai else 1
+        council_mode = (settings.council_mode or "").strip().lower()
+        use_openai = council_mode == "openai" and bool(settings.openai_api_key)
+        use_anthropic = council_mode == "anthropic" and bool(settings.anthropic_api_key)
+        use_gemini = council_mode == "gemini" and bool(settings.gemini_api_key)
+        use_multi = council_mode == "multi" and bool(
+            settings.openai_api_key or settings.anthropic_api_key or settings.gemini_api_key
+        )
+        use_llm = use_openai or use_anthropic or use_gemini or use_multi
+        planner_max_attempts = max(1, 1 + max(0, settings.agent_max_retries)) if use_llm else 1
 
-        if use_openai:
+        planner_tasks = {
+            "sleep_first": "plan_sleep_first",
+            "errands_first": "plan_errands_first",
+            "admin_first": "plan_admin_first",
+        }
+
+        if use_openai or use_anthropic or use_gemini:
+            if use_openai:
+                provider = "openai"
+                model = settings.openai_model
+                api_key = settings.openai_api_key or ""
+                planner_fn = generate_proposal_openai
+            elif use_anthropic:
+                provider = "anthropic"
+                model = settings.anthropic_model
+                api_key = settings.anthropic_api_key or ""
+                planner_fn = generate_proposal_anthropic
+            else:
+                provider = "gemini"
+                model = settings.gemini_model
+                api_key = settings.gemini_api_key or ""
+                planner_fn = generate_proposal_gemini
+
             await events.add(
                 shift_id=shift_id,
                 event_type="llm_mode",
                 agent="Coordinator",
-                message=f"COUNCIL_MODE=openai (model={settings.openai_model}).",
+                message=f"COUNCIL_MODE={provider} (model={model}).",
                 run_id=run_id,
             )
-            planner_tasks = {
-                "sleep_first": "plan_sleep_first",
-                "errands_first": "plan_errands_first",
-                "admin_first": "plan_admin_first",
-            }
 
             async def _planner_call(archetype: str) -> None:
                 task_name = planner_tasks[archetype]
@@ -446,10 +504,11 @@ async def _execute_council_run(
                         task_ids[task_name],
                         attempt=attempt,
                         inputs={
-                            "council_mode": settings.council_mode,
+                            "council_mode": council_mode,
                             "context_pack_id": context_pack_id,
                             "context_logs": len(context_logs),
-                            "model": settings.openai_model,
+                            "provider": provider,
+                            "model": model,
                             "energy_override": energy_override,
                             "timeout_s": settings.agent_timeout_seconds,
                             "archetype": archetype,
@@ -464,9 +523,9 @@ async def _execute_council_run(
                     )
                     try:
                         llm = await asyncio.to_thread(
-                            generate_proposal_openai,
-                            api_key=settings.openai_api_key or "",
-                            model=settings.openai_model,
+                            planner_fn,
+                            api_key=api_key,
+                            model=model,
                             archetype=archetype,  # type: ignore[arg-type]
                             logs=context_logs,
                             energy=energy_override,
@@ -475,9 +534,10 @@ async def _execute_council_run(
                         proposal_overrides[archetype] = llm
                         planner_meta[archetype] = {
                             "llm_used": True,
+                            "provider": provider,
                             "attempts": attempt,
                             "max_attempts": planner_max_attempts,
-                            "model": settings.openai_model,
+                            "model": model,
                         }
                         await events.add(
                             shift_id=shift_id,
@@ -509,12 +569,200 @@ async def _execute_council_run(
                 )
 
             await asyncio.gather(*[_planner_call(a) for a in planner_tasks.keys()])
-        else:
+        elif use_multi:
             await events.add(
                 shift_id=shift_id,
                 event_type="llm_mode",
                 agent="Coordinator",
-                message="COUNCIL_MODE=heuristic.",
+                message="COUNCIL_MODE=multi (OpenAI/Anthropic/Gemini as available).",
+                run_id=run_id,
+                meta={
+                    "openai": bool(settings.openai_api_key),
+                    "anthropic": bool(settings.anthropic_api_key),
+                    "gemini": bool(settings.gemini_api_key),
+                },
+            )
+
+            provider_orders: dict[str, list[str]] = {
+                "sleep_first": ["openai", "anthropic", "gemini"],
+                "errands_first": ["anthropic", "openai", "gemini"],
+                "admin_first": ["gemini", "openai", "anthropic"],
+            }
+
+            def _provider_candidates(archetype: str):
+                order = provider_orders.get(archetype, ["openai", "anthropic", "gemini"])
+                out = []
+                for provider in order:
+                    if provider == "openai" and settings.openai_api_key:
+                        out.append(("openai", settings.openai_model, settings.openai_api_key, generate_proposal_openai))
+                    if provider == "anthropic" and settings.anthropic_api_key:
+                        out.append(("anthropic", settings.anthropic_model, settings.anthropic_api_key, generate_proposal_anthropic))
+                    if provider == "gemini" and settings.gemini_api_key:
+                        out.append(("gemini", settings.gemini_model, settings.gemini_api_key, generate_proposal_gemini))
+                return out
+
+            async def _planner_call(archetype: str) -> None:
+                task_name = planner_tasks[archetype]
+                order = provider_orders.get(archetype, ["openai", "anthropic", "gemini"])
+                desired_primary = order[0] if order else "openai"
+                candidates = _provider_candidates(archetype)
+                if not candidates:
+                    planner_meta[archetype] = {
+                        "llm_used": False,
+                        "attempts": 0,
+                        "max_attempts": 1,
+                        "error": "No LLM API keys configured for this run.",
+                        "fallback": True,
+                    }
+                    await events.add(
+                        shift_id=shift_id,
+                        event_type="llm_fallback",
+                        agent=task_agents.get(task_name),
+                        message=f"No LLM keys available for {archetype.replace('_', '-')}; using heuristic proposal.",
+                        run_id=run_id,
+                    )
+                    return
+
+                primary_provider, primary_model, primary_key, primary_fn = candidates[0]
+                provider_fallback = primary_provider != desired_primary
+
+                last_error = ""
+                for attempt in range(1, planner_max_attempts + 1):
+                    await tasks.mark_running(
+                        task_ids[task_name],
+                        attempt=attempt,
+                        inputs={
+                            "council_mode": settings.council_mode,
+                            "context_pack_id": context_pack_id,
+                            "context_logs": len(context_logs),
+                            "provider": primary_provider,
+                            "model": primary_model,
+                            "energy_override": energy_override,
+                            "timeout_s": settings.agent_timeout_seconds,
+                            "archetype": archetype,
+                        },
+                    )
+                    await events.add(
+                        shift_id=shift_id,
+                        event_type="llm_attempt",
+                        agent=task_agents.get(task_name),
+                        message=f"{primary_provider} attempt {attempt}/{planner_max_attempts} for {archetype.replace('_', '-')}.",
+                        run_id=run_id,
+                        meta={"provider": primary_provider, "model": primary_model},
+                    )
+                    try:
+                        llm = await asyncio.to_thread(
+                            primary_fn,
+                            api_key=primary_key or "",
+                            model=primary_model,
+                            archetype=archetype,  # type: ignore[arg-type]
+                            logs=context_logs,
+                            energy=energy_override,
+                            timeout_s=settings.agent_timeout_seconds,
+                        )
+                        proposal_overrides[archetype] = llm
+                        planner_meta[archetype] = {
+                            "llm_used": True,
+                            "provider": primary_provider,
+                            "model": primary_model,
+                            "attempts": attempt,
+                            "max_attempts": planner_max_attempts,
+                            "provider_fallback": provider_fallback,
+                        }
+                        await events.add(
+                            shift_id=shift_id,
+                            event_type="llm_ok",
+                            agent=task_agents.get(task_name),
+                            message=f"{primary_provider} proposal generated for {archetype.replace('_', '-')}.",
+                            run_id=run_id,
+                            meta={"provider": primary_provider, "model": primary_model, "provider_fallback": provider_fallback},
+                        )
+                        return
+                    except Exception as e:
+                        last_error = str(e)
+                        if attempt < planner_max_attempts:
+                            await asyncio.sleep(min(2.0, 0.4 * (2 ** (attempt - 1))))
+                            continue
+
+                for provider, model, api_key, fn in candidates[1:]:
+                    await events.add(
+                        shift_id=shift_id,
+                        event_type="llm_attempt",
+                        agent=task_agents.get(task_name),
+                        message=f"Fallback provider {provider} for {archetype.replace('_', '-')}.",
+                        run_id=run_id,
+                        meta={"provider": provider, "model": model, "fallback_provider": True},
+                    )
+                    try:
+                        llm = await asyncio.to_thread(
+                            fn,
+                            api_key=api_key or "",
+                            model=model,
+                            archetype=archetype,  # type: ignore[arg-type]
+                            logs=context_logs,
+                            energy=energy_override,
+                            timeout_s=settings.agent_timeout_seconds,
+                        )
+                        proposal_overrides[archetype] = llm
+                        planner_meta[archetype] = {
+                            "llm_used": True,
+                            "provider": provider,
+                            "model": model,
+                            "attempts": 1,
+                            "max_attempts": 1,
+                            "provider_fallback": True,
+                            "provider_fallback_from": primary_provider,
+                        }
+                        await events.add(
+                            shift_id=shift_id,
+                            event_type="llm_ok",
+                            agent=task_agents.get(task_name),
+                            message=f"{provider} proposal generated for {archetype.replace('_', '-')}.",
+                            run_id=run_id,
+                            meta={"provider": provider, "model": model, "fallback_provider": True},
+                        )
+                        return
+                    except Exception as e:
+                        last_error = str(e)
+                        continue
+
+                planner_meta[archetype] = {
+                    "llm_used": False,
+                    "attempts": planner_max_attempts,
+                    "max_attempts": planner_max_attempts,
+                    "error": last_error,
+                    "fallback": True,
+                    "providers_tried": [p for p, _, _, _ in candidates],
+                }
+                await events.add(
+                    shift_id=shift_id,
+                    event_type="llm_fallback",
+                    agent=task_agents.get(task_name),
+                    message=f"All providers failed for {archetype.replace('_', '-')}; using heuristic proposal.",
+                    run_id=run_id,
+                    meta={"error": last_error, "providers_tried": [p for p, _, _, _ in candidates]},
+                )
+
+            await asyncio.gather(*[_planner_call(a) for a in planner_tasks.keys()])
+        else:
+            llm_requested = council_mode in {"openai", "anthropic", "gemini", "multi"}
+            if council_mode == "openai" and not settings.openai_api_key:
+                llm_message = "COUNCIL_MODE=openai but OPENAI_API_KEY is missing; using heuristic."
+            elif council_mode == "anthropic" and not settings.anthropic_api_key:
+                llm_message = "COUNCIL_MODE=anthropic but ANTHROPIC_API_KEY is missing; using heuristic."
+            elif council_mode == "gemini" and not settings.gemini_api_key:
+                llm_message = "COUNCIL_MODE=gemini but GEMINI_API_KEY is missing; using heuristic."
+            elif council_mode == "multi" and not (
+                settings.openai_api_key or settings.anthropic_api_key or settings.gemini_api_key
+            ):
+                llm_message = "COUNCIL_MODE=multi but no LLM API keys are configured; using heuristic."
+            else:
+                llm_message = "COUNCIL_MODE=heuristic."
+            await events.add(
+                shift_id=shift_id,
+                event_type="llm_mode",
+                agent="Coordinator",
+                message=llm_message,
                 run_id=run_id,
             )
             for task_name in ["plan_sleep_first", "plan_errands_first", "plan_admin_first"]:
@@ -522,10 +770,11 @@ async def _execute_council_run(
                     task_ids[task_name],
                     attempt=1,
                     inputs={
-                        "council_mode": settings.council_mode,
+                        "council_mode": council_mode,
                         "context_pack_id": context_pack_id,
                         "context_logs": len(context_logs),
                         "energy_override": energy_override,
+                        "llm_requested": llm_requested,
                     },
                 )
             for archetype in ["sleep_first", "errands_first", "admin_first"]:
@@ -560,23 +809,84 @@ async def _execute_council_run(
                 },
             )
 
+        decision = output.decision
+        handoff_markdown = output.handoff_markdown
+
         await tasks.mark_running(
             task_ids["score_and_select"],
             attempt=1,
-            inputs={"proposal_ids": proposal_ids, "rubric": "v1"},
+            inputs={
+                "proposal_ids": proposal_ids,
+                "rubric": "v1",
+                "judge_mode": "heuristic",
+                "council_mode": council_mode,
+            },
         )
-        decision_id = await DecisionsRepo(mongo.db).upsert_for_run(run_id, output.decision)
+        if settings.openai_api_key and council_mode in {"openai", "multi"}:
+            try:
+                await events.add(
+                    shift_id=shift_id,
+                    event_type="llm_attempt",
+                    agent=task_agents.get("score_and_select", "Referee"),
+                    message=f"OpenAI referee scoring (model={settings.openai_model}).",
+                    run_id=run_id,
+                )
+                llm_decision = await asyncio.to_thread(
+                    score_decision_openai,
+                    api_key=settings.openai_api_key,
+                    model=settings.openai_model,
+                    proposals=output.proposals,
+                    context_pack=context_pack,
+                    timeout_s=settings.agent_timeout_seconds,
+                )
+                decision = llm_decision
+                handoff_markdown = make_handoff_markdown_from_proposals(
+                    proposals=output.proposals,
+                    selected_archetype=str(decision.get("selected_archetype") or ""),
+                    logs=logs,
+                    energy_override=energy_override,
+                )
+                await events.add(
+                    shift_id=shift_id,
+                    event_type="llm_ok",
+                    agent=task_agents.get("score_and_select", "Referee"),
+                    message="OpenAI referee decision generated.",
+                    run_id=run_id,
+                    meta={"model": settings.openai_model},
+                )
+                await tasks.mark_running(
+                    task_ids["score_and_select"],
+                    attempt=1,
+                    inputs={
+                        "proposal_ids": proposal_ids,
+                        "rubric": "v1",
+                        "judge_mode": "openai",
+                        "judge_model": settings.openai_model,
+                        "council_mode": council_mode,
+                    },
+                )
+            except Exception as e:
+                await events.add(
+                    shift_id=shift_id,
+                    event_type="llm_fallback",
+                    agent=task_agents.get("score_and_select", "Referee"),
+                    message="OpenAI referee unavailable; using heuristic rubric scoring.",
+                    run_id=run_id,
+                    meta={"error": str(e)},
+                )
+
+        decision_id = await DecisionsRepo(mongo.db).upsert_for_run(run_id, decision)
         await tasks.mark_completed(task_ids["score_and_select"], outputs={"decision_id": decision_id})
 
         prev = await artifacts_repo.latest_for_shift(shift_id, kind="handoff_markdown")
         prev_id = str(prev["_id"]) if prev else None
-        diff = unified_diff(prev["markdown"], output.handoff_markdown) if prev else None
+        diff = unified_diff(prev["markdown"], handoff_markdown) if prev else None
         await tasks.mark_running(task_ids["write_handoff"], attempt=1, inputs={"kind": "handoff_markdown"})
         handoff_artifact_id = await artifacts_repo.create(
             shift_id=shift_id,
             run_id=run_id,
             kind="handoff_markdown",
-            markdown=output.handoff_markdown,
+            markdown=handoff_markdown,
             diff=diff,
             prev_artifact_id=prev_id,
         )
@@ -642,8 +952,13 @@ async def _execute_council_run(
             task_id=task_ids.get("score_and_select"),
             sender=task_agents.get("score_and_select", "Referee"),
             role="assistant",
-            content=decision_to_markdown(output.decision),
-            meta={"decision_id": decision_id, "context_pack_id": context_pack_id},
+            content=decision_to_markdown(decision),
+            meta={
+                "decision_id": decision_id,
+                "context_pack_id": context_pack_id,
+                "judge_mode": decision.get("judge_mode") if isinstance(decision, dict) else None,
+                "judge_model": decision.get("judge_model") if isinstance(decision, dict) else None,
+            },
         )
 
         await messages.add(
@@ -664,10 +979,18 @@ async def _execute_council_run(
         )
 
         transcript_messages = await messages.list_for_run(run_id, limit=400)
+        transcript_events = [
+            e for e in await events.list_for_shift(shift_id, limit=200) if e.get("run_id") == run_id
+        ]
+        context_pack_doc = await ContextPacksRepo(mongo.db).get_for_run(run_id)
         council_md = build_council_transcript_markdown_from_messages(
             shift_id=shift_id,
             run_id=run_id,
             messages=transcript_messages,
+            council_mode=council_mode,
+            energy_override=energy_override,
+            context_pack=context_pack_doc or context_pack,
+            events=list(reversed(transcript_events)),
         )
         prev_c = await artifacts_repo.latest_for_shift(shift_id, kind="council_transcript_markdown")
         prev_c_id = str(prev_c["_id"]) if prev_c else None
@@ -733,10 +1056,19 @@ async def _execute_council_run(
             pass
         try:
             transcript_messages = await messages.list_for_run(run_id, limit=400)
+            council_mode_safe = (settings.council_mode or "").strip().lower()
+            context_pack_doc = await ContextPacksRepo(mongo.db).get_for_run(run_id)
+            transcript_events = [
+                e for e in await events.list_for_shift(shift_id, limit=200) if e.get("run_id") == run_id
+            ]
             council_md = build_council_transcript_markdown_from_messages(
                 shift_id=shift_id,
                 run_id=run_id,
                 messages=transcript_messages,
+                council_mode=council_mode_safe,
+                energy_override=energy_override,
+                context_pack=context_pack_doc,
+                events=list(reversed(transcript_events)),
             )
             prev_c = await artifacts_repo.latest_for_shift(shift_id, kind="council_transcript_markdown")
             prev_c_id = str(prev_c["_id"]) if prev_c else None
@@ -757,11 +1089,44 @@ async def _execute_council_run(
 async def add_log(
     request: Request,
     shift_id: str,
-    log_type: Literal["note", "task", "deadline", "inventory"] = Form(...),
+    log_type: str | None = Form(None),
     text: str = Form(...),
 ):
     mongo = _mongo(request)
-    await LogsRepo(mongo.db).add(shift_id, log_type, text.strip())
+    settings = _settings(request)
+    raw = text.strip()
+    if not raw:
+        return RedirectResponse(url=f"/shifts/{shift_id}", status_code=303)
+
+    logs_repo = LogsRepo(mongo.db)
+    allowed = {"note", "task", "deadline", "inventory"}
+    if log_type and log_type in allowed:
+        await logs_repo.add(shift_id, log_type, raw, tags=[log_type])
+    else:
+        items: list[dict] = []
+        if settings.openai_api_key:
+            try:
+                items = await asyncio.to_thread(
+                    tag_items_openai,
+                    api_key=settings.openai_api_key,
+                    model=settings.openai_model,
+                    text=raw,
+                    timeout_s=min(10.0, settings.agent_timeout_seconds),
+                )
+            except Exception:
+                items = []
+        if not items:
+            items = tag_items_heuristic(raw)
+        for it in items:
+            it_text = str(it.get("text") or "").strip()
+            tags = it.get("tags") or []
+            tags = [str(t).strip().lower() for t in tags if str(t).strip().lower() in allowed]
+            if not it_text:
+                continue
+            if not tags:
+                tags = ["note"]
+            primary = tags[0]
+            await logs_repo.add(shift_id, primary, it_text, tags=tags)
     await ShiftsRepo(mongo.db).touch(shift_id)
     await _recompute_shift_state(
         mongo,
@@ -805,7 +1170,24 @@ async def create_run(
     if not shift:
         return RedirectResponse(url="/", status_code=303)
 
-    run_id = await RunsRepo(mongo.db).create(shift_id, energy_override=energy or None)
+    council_mode = (settings.council_mode or "").strip().lower()
+    run_id = await RunsRepo(mongo.db).create(
+        shift_id,
+        energy_override=energy or None,
+        council_mode=council_mode,
+        llm={
+            "keys_present": {
+                "openai": bool(settings.openai_api_key),
+                "anthropic": bool(settings.anthropic_api_key),
+                "gemini": bool(settings.gemini_api_key),
+            },
+            "models": {
+                "openai": settings.openai_model,
+                "anthropic": settings.anthropic_model,
+                "gemini": settings.gemini_model,
+            },
+        },
+    )
     await events.add(
         shift_id=shift_id,
         event_type="council_start",
@@ -822,8 +1204,16 @@ async def create_run(
         run_id=run_id,
     )
 
-    use_openai = settings.council_mode == "openai" and bool(settings.openai_api_key)
-    planner_max_attempts = max(1, 1 + max(0, settings.agent_max_retries)) if use_openai else 1
+    use_llm = bool(
+        (council_mode == "openai" and settings.openai_api_key)
+        or (council_mode == "anthropic" and settings.anthropic_api_key)
+        or (council_mode == "gemini" and settings.gemini_api_key)
+        or (
+            council_mode == "multi"
+            and (settings.openai_api_key or settings.anthropic_api_key or settings.gemini_api_key)
+        )
+    )
+    planner_max_attempts = max(1, 1 + max(0, settings.agent_max_retries)) if use_llm else 1
 
     task_defs = [
         ("normalize_logs", "Normalizer", "normalize_logs"),
@@ -873,19 +1263,12 @@ async def create_run(
     return RedirectResponse(url=f"/shifts/{shift_id}/runs/{run_id}", status_code=303)
 
 
-@app.get("/shifts/{shift_id}/runs/{run_id}", response_class=HTMLResponse)
-async def run_view(request: Request, shift_id: str, run_id: str):
-    mongo = _mongo(request)
-    run = await RunsRepo(mongo.db).get(run_id)
-    if not run:
-        return RedirectResponse(url=f"/shifts/{shift_id}", status_code=303)
-    run_shift_id = str(run.get("shift_id") or "")
-    if run_shift_id and run_shift_id != shift_id:
-        return RedirectResponse(url=f"/shifts/{run_shift_id}/runs/{run_id}", status_code=303)
+async def _build_run_template_data(mongo: Mongo, *, shift_id: str, run_id: str, run: dict) -> dict:
+    shift = await ShiftsRepo(mongo.db).get(shift_id)
     tasks = await TasksRepo(mongo.db).list_for_run(run_id)
     proposals = await ProposalsRepo(mongo.db).list_for_run(run_id)
     decision = await DecisionsRepo(mongo.db).get_for_run(run_id)
-    # For demo UX: compare against the previous run (if any) to show "winner changed" + nav.
+
     runs_repo = RunsRepo(mongo.db)
     shift_runs = await runs_repo.list_for_shift(shift_id, limit=20)
     prev_run = None
@@ -900,12 +1283,22 @@ async def run_view(request: Request, shift_id: str, run_id: str):
             break
     if prev_run:
         prev_decision = await DecisionsRepo(mongo.db).get_for_run(str(prev_run.get("_id")))
+
     context_pack = await ContextPacksRepo(mongo.db).get_for_run(run_id)
     context_pack_html = render_markdown_safe(context_pack.get("compiled_text", "")) if context_pack else ""
+
     artifact = await ArtifactsRepo(mongo.db).get_for_run(run_id, kind="handoff_markdown")
-    html = render_markdown_safe(artifact["markdown"]) if artifact else ""
+    artifact_html = render_markdown_safe(artifact["markdown"]) if artifact else ""
+
     council_artifact = await ArtifactsRepo(mongo.db).get_for_run(run_id, kind="council_transcript_markdown")
     council_html = render_markdown_safe(council_artifact["markdown"]) if council_artifact else ""
+
+    run_events = [
+        e
+        for e in await EventsRepo(mongo.db).list_for_shift(shift_id, limit=120)
+        if e.get("run_id") == run_id
+    ]
+
     live_council_html = ""
     live_council_count = 0
     if not council_artifact:
@@ -916,43 +1309,72 @@ async def run_view(request: Request, shift_id: str, run_id: str):
                 shift_id=shift_id,
                 run_id=run_id,
                 messages=run_messages,
+                council_mode=str(run.get("council_mode") or ""),
+                energy_override=run.get("energy_override"),
+                context_pack=context_pack,
+                events=list(reversed(run_events)),
             )
             live_council_html = render_markdown_safe(live_council_md)
-    run_events = [
-        e
-        for e in await EventsRepo(mongo.db).list_for_shift(shift_id, limit=120)
-        if e.get("run_id") == run_id
-    ]
+
+    return {
+        "shift_id": shift_id,
+        "shift": shift,
+        "run": run,
+        "tasks": tasks,
+        "proposals": proposals,
+        "decision": decision,
+        "prev_run": prev_run,
+        "next_run": next_run,
+        "prev_decision": prev_decision,
+        "context_pack": context_pack,
+        "context_pack_html": context_pack_html,
+        "artifact": artifact,
+        "artifact_html": artifact_html,
+        "council_artifact": council_artifact,
+        "council_html": council_html,
+        "live_council_html": live_council_html,
+        "live_council_count": live_council_count,
+        "events": run_events,
+    }
+
+
+@app.get("/shifts/{shift_id}/runs/{run_id}", response_class=HTMLResponse)
+async def run_view(request: Request, shift_id: str, run_id: str):
+    mongo = _mongo(request)
+    run = await RunsRepo(mongo.db).get(run_id)
+    if not run:
+        return RedirectResponse(url=f"/shifts/{shift_id}", status_code=303)
+    run_shift_id = str(run.get("shift_id") or "")
+    if run_shift_id and run_shift_id != shift_id:
+        return RedirectResponse(url=f"/shifts/{run_shift_id}/runs/{run_id}", status_code=303)
+    data = await _build_run_template_data(mongo, shift_id=shift_id, run_id=run_id, run=run)
     return templates.TemplateResponse(
         request,
         "run.html",
-        {
-            "shift_id": shift_id,
-            "run": run,
-            "tasks": tasks,
-            "proposals": proposals,
-            "decision": decision,
-            "prev_run": prev_run,
-            "next_run": next_run,
-            "prev_decision": prev_decision,
-            "context_pack": context_pack,
-            "context_pack_html": context_pack_html,
-            "artifact": artifact,
-            "artifact_html": html,
-            "council_artifact": council_artifact,
-            "council_html": council_html,
-            "live_council_html": live_council_html,
-            "live_council_count": live_council_count,
-            "events": run_events,
-        },
+        data,
     )
 
 
+@app.get("/shifts/{shift_id}/runs/{run_id}/fragment/main", response_class=HTMLResponse)
+async def run_main_fragment(request: Request, shift_id: str, run_id: str):
+    mongo = _mongo(request)
+    run = await RunsRepo(mongo.db).get(run_id)
+    if not run:
+        return Response(content="", status_code=404)
+    run_shift_id = str(run.get("shift_id") or "")
+    if run_shift_id and run_shift_id != shift_id:
+        return Response(content="", status_code=409)
+    data = await _build_run_template_data(mongo, shift_id=shift_id, run_id=run_id, run=run)
+    return templates.TemplateResponse(request, "fragments/run_main.html", data)
+
+
 @app.get("/shifts/{shift_id}/runs/{run_id}/handoff.md")
-async def download_handoff(request: Request, shift_id: str, run_id: str):
+async def download_handoff(request: Request, shift_id: str, run_id: str, raw: int = 0):
     mongo = _mongo(request)
     artifact = await ArtifactsRepo(mongo.db).get_for_run(run_id, kind="handoff_markdown")
     if not artifact:
+        if raw:
+            return Response(content="handoff_markdown artifact not found", status_code=404, media_type="text/plain")
         return RedirectResponse(url=f"/shifts/{shift_id}", status_code=303)
     markdown_text = artifact["markdown"]
     filename = f"babyhandoff_shift_{shift_id}_run_{run_id}.md"
@@ -964,7 +1386,7 @@ async def download_handoff(request: Request, shift_id: str, run_id: str):
 
 
 @app.get("/shifts/{shift_id}/runs/{run_id}/council.md")
-async def download_council(request: Request, shift_id: str, run_id: str):
+async def download_council(request: Request, shift_id: str, run_id: str, raw: int = 0):
     mongo = _mongo(request)
     artifact = await ArtifactsRepo(mongo.db).get_for_run(run_id, kind="council_transcript_markdown")
     if artifact:
@@ -972,11 +1394,28 @@ async def download_council(request: Request, shift_id: str, run_id: str):
     else:
         run_messages = await MessagesRepo(mongo.db).list_for_run(run_id, limit=400)
         if not run_messages:
+            if raw:
+                return Response(
+                    content="No council messages or transcript artifact found",
+                    status_code=404,
+                    media_type="text/plain",
+                )
             return RedirectResponse(url=f"/shifts/{shift_id}/runs/{run_id}", status_code=303)
+        run = await RunsRepo(mongo.db).get(run_id)
+        context_pack = await ContextPacksRepo(mongo.db).get_for_run(run_id)
+        run_events = [
+            e
+            for e in await EventsRepo(mongo.db).list_for_shift(shift_id, limit=200)
+            if e.get("run_id") == run_id
+        ]
         markdown_text = build_council_transcript_markdown_from_messages(
             shift_id=shift_id,
             run_id=run_id,
             messages=run_messages,
+            council_mode=str((run or {}).get("council_mode") or ""),
+            energy_override=(run or {}).get("energy_override"),
+            context_pack=context_pack,
+            events=list(reversed(run_events)),
         )
     filename = f"babyhandoff_council_shift_{shift_id}_run_{run_id}.md"
     return Response(

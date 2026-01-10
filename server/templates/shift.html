@@ -4,8 +4,23 @@
     <div class="lg:col-span-2">
       <div class="flex items-start justify-between gap-4">
         <div>
-          <h1 class="text-2xl font-semibold tracking-tight">Current shift</h1>
-          <p class="mt-1 text-sm text-zinc-400">Capture reality. The village handles structure.</p>
+          <div class="flex flex-wrap items-center gap-3">
+            <h1 class="text-2xl font-semibold tracking-tight">{{ shift.title or "Untitled shift" }}</h1>
+            <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 text-[11px] text-zinc-400">
+              id {{ shift['_id'][:6] }}
+            </span>
+          </div>
+          <p class="mt-1 text-sm text-zinc-400">
+            Capture reality. The village handles structure.
+            {% if shift.created_at_iso %}
+              <span class="text-zinc-600">Started <time data-time="local" datetime="{{ shift.created_at_iso }}">{{ shift.created_at }}</time>.</span>
+            {% endif %}
+            {% if shift.created_at_iso and shift.window_end_iso %}
+              <span class="text-zinc-600">
+                Window ends <time data-time="local" datetime="{{ shift.window_end_iso }}">end</time>.
+              </span>
+            {% endif %}
+          </p>
         </div>
         <div class="flex gap-3">
           <form action="/shifts/{{ shift['_id'] }}/sample" method="post">
@@ -19,49 +34,76 @@
         </div>
       </div>
 
+      <div class="mt-4 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+        <form action="/shifts/{{ shift['_id'] }}/rename" method="post" class="flex flex-wrap items-center gap-2">
+          <label class="text-xs font-semibold text-zinc-300">Rename</label>
+          <input
+            name="title"
+            value="{{ shift.title or '' }}"
+            placeholder="e.g., Tonight handoff"
+            class="min-w-[220px] flex-1 rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-600/80 focus:outline-none"
+          />
+          <button class="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-zinc-700/80">
+            Save
+          </button>
+        </form>
+      </div>
+
       <div class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
         <form action="/shifts/{{ shift['_id'] }}/logs" method="post" class="grid gap-4">
-          <div>
-            <label class="text-sm font-semibold">Add entry</label>
-            <div class="mt-2 flex flex-wrap gap-2">
-              {% for (value, label) in [("note","Note"),("task","Task"),("deadline","Deadline"),("inventory","Running low")] %}
-                <label class="inline-flex cursor-pointer items-center gap-2 rounded-full border border-zinc-800/80 bg-zinc-950/50 px-3 py-1 text-xs text-zinc-300 transition hover:border-zinc-700/80">
-                  <input class="accent-indigo-500" type="radio" name="log_type" value="{{ value }}" {% if value == "note" %}checked{% endif %} />
-                  {{ label }}
-                </label>
-              {% endfor %}
-            </div>
-          </div>
-
           <div class="flex items-center justify-between">
-            <div class="text-sm font-semibold text-zinc-200">Input</div>
-            <button
-              type="button"
-              id="voice-btn"
-              class="rounded-2xl border border-zinc-800/80 bg-zinc-950/55 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:border-zinc-700/80"
-            >
-              Voice
-            </button>
+            <div class="text-sm font-semibold text-zinc-200">Add entry</div>
+            <div class="text-xs text-zinc-500">auto-tagged</div>
           </div>
 
           <textarea
             id="note-text"
             name="text"
             rows="4"
-            placeholder="Type a quick note…"
+            placeholder="Type anything… we’ll split + tag it (task / deadline / running low / note)."
             class="w-full rounded-2xl border border-zinc-800/80 bg-zinc-950/55 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-600/80 focus:outline-none"
             required
             autofocus
           ></textarea>
 
           <div class="flex items-center justify-between">
-            <div class="text-xs text-zinc-500">Tip: keep it messy. Agents will normalize. <span class="text-zinc-600">Cmd+Enter</span> to add.</div>
-            <button class="rounded-2xl bg-gradient-to-br from-zinc-100 to-white px-4 py-2 text-sm font-semibold text-zinc-950 shadow hover:from-white hover:to-white">
-              Add
-            </button>
-          </div>
-          <div class="text-xs text-zinc-600">
-            Voice: click <span class="text-zinc-400">Voice</span>, speak, press <span class="text-zinc-400">Esc</span> to stop.
+            <div class="text-xs text-zinc-500">Tip: keep it messy. <span class="text-zinc-600">Cmd/Ctrl+Enter</span> to add.</div>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                id="voice-btn"
+                aria-label="Voice input"
+                class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-800/80 bg-zinc-950/55 text-base text-zinc-200 hover:border-zinc-700/80"
+                title="Voice input"
+              >
+                <svg viewBox="0 0 24 24" fill="none" class="h-5 w-5" aria-hidden="true">
+                  <path
+                    d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    d="M19 11a7 7 0 0 1-14 0"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    d="M12 18v3"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <button class="rounded-2xl bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-950 shadow hover:bg-white">
+                Add
+              </button>
+            </div>
           </div>
         </form>
       </div>
@@ -78,21 +120,29 @@
             </div>
           {% endif %}
           {% for l in logs %}
-            {% set t = (l.type or "")|lower %}
+            {% set tags = l.tags or ([l.type] if l.type else []) %}
+            {% set t = ((tags[0] if tags|length else (l.type or ""))|lower) %}
             <div id="log-{{ l['_id'] }}" class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
-                  <span
-                    class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
-                    {% if t == 'deadline' %}border-amber-500/40 bg-amber-500/10 text-amber-200
-                    {% elif t == 'inventory' %}border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200
-                    {% elif t == 'task' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
-                    {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}"
-                  >
-                    {{ l.type|upper }}
-                  </span>
+                  {% for tag in tags %}
+                    {% set tl = (tag or "")|lower %}
+                    <span
+                      class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
+                      {% if tl == 'deadline' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                      {% elif tl == 'inventory' %}border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200
+                      {% elif tl == 'task' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
+                      {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}"
+                    >
+                      {{ tag|upper }}
+                    </span>
+                  {% endfor %}
                 </div>
-                <div class="text-xs text-zinc-500">{{ l.created_at }}</div>
+                {% if l.created_at %}
+                  <div class="text-xs text-zinc-500">
+                    <time data-time="relative" datetime="{{ l.created_at.isoformat() }}">{{ l.created_at }}</time>
+                  </div>
+                {% endif %}
               </div>
               <div class="mt-2 text-sm text-zinc-100">{{ l.text }}</div>
             </div>
@@ -103,15 +153,15 @@
 
     <div class="lg:col-span-1">
       <div
-        class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] lg:sticky lg:top-24"
+        class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
         hx-get="/shifts/{{ shift['_id'] }}/risk"
-        hx-trigger="load, every 2s"
+        hx-trigger="load, every 5s"
         hx-swap="innerHTML"
       >
         <div class="text-sm text-zinc-400">Loading Risk Radar…</div>
       </div>
 
-      <div class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+      <div id="council" class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
         <div class="text-sm font-semibold">Village Council</div>
         <div class="mt-2 text-sm text-zinc-400">
           Generate three competing plans and auto-select the best (next 12h + lightweight 24h outlook).
@@ -128,7 +178,7 @@
               </label>
             {% endfor %}
           </div>
-          <button id="generate-btn" class="w-full rounded-2xl bg-gradient-to-br from-zinc-100 to-white px-4 py-2 text-sm font-semibold text-zinc-950 shadow hover:from-white hover:to-white">
+          <button id="generate-btn" class="w-full rounded-2xl bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-950 shadow hover:bg-white">
             Generate plan
           </button>
         </form>
@@ -167,7 +217,12 @@
                     </span>
                   {% endif %}
                 </div>
-                <div class="mt-1 text-[11px] text-zinc-500">Started {{ r.created_at }}</div>
+                <div class="mt-1 text-[11px] text-zinc-500">
+                  Started
+                  {% if r.created_at %}
+                    <time data-time="relative" datetime="{{ r.created_at.isoformat() }}">{{ r.created_at }}</time>
+                  {% endif %}
+                </div>
               </div>
               <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
                 {% if status == 'completed' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
@@ -195,6 +250,14 @@
     const btn = document.getElementById("voice-btn");
     const textarea = document.getElementById("note-text");
     if (!btn || !textarea) return;
+    btn.setAttribute("aria-pressed", "false");
+
+    const iconMic = btn.innerHTML;
+    const iconStop = `
+      <svg viewBox="0 0 24 24" fill="none" class="h-5 w-5" aria-hidden="true">
+        <path d="M6 6h12v12H6z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      </svg>
+    `;
 
     const form = textarea.closest("form");
     textarea.addEventListener("keydown", (e) => {
@@ -204,7 +267,15 @@
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       btn.disabled = true;
-      btn.textContent = "Voice unsupported";
+      btn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" class="h-5 w-5 opacity-60" aria-hidden="true">
+          <path d="M9 9v2a3 3 0 0 0 4.24 2.73" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-5.65-1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <path d="M19 11a7 7 0 0 1-11.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <path d="M3 3l18 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+      `;
+      btn.title = "Voice input unsupported";
       btn.classList.add("opacity-50");
       return;
     }
@@ -217,6 +288,20 @@
     let listening = false;
     let finalText = "";
 
+    function setIdle() {
+      btn.innerHTML = iconMic;
+      btn.title = "Voice input";
+      btn.setAttribute("aria-pressed", "false");
+      btn.classList.remove("border-rose-500/50", "bg-rose-500/10", "text-rose-200");
+    }
+
+    function setListening() {
+      btn.innerHTML = iconStop;
+      btn.title = "Listening… (click or Esc to stop)";
+      btn.setAttribute("aria-pressed", "true");
+      btn.classList.add("border-rose-500/50", "bg-rose-500/10", "text-rose-200");
+    }
+
     recognition.onresult = (event) => {
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -227,25 +312,34 @@
       textarea.value = (finalText + interim).trim();
     };
 
+    recognition.onstart = () => {
+      listening = true;
+      setListening();
+    };
+
     recognition.onend = () => {
       listening = false;
-      btn.textContent = "Voice";
-      btn.classList.remove("border-rose-500/50", "bg-rose-500/10", "text-rose-200");
+      setIdle();
     };
 
     recognition.onerror = () => {
       listening = false;
-      btn.textContent = "Voice";
-      btn.classList.remove("border-rose-500/50", "bg-rose-500/10", "text-rose-200");
+      setIdle();
     };
 
     btn.addEventListener("click", () => {
-      if (listening) return;
-      listening = true;
+      if (listening) {
+        try {
+          recognition.stop();
+        } catch (e) {}
+        return;
+      }
       finalText = textarea.value ? textarea.value.trim() + " " : "";
-      btn.textContent = "Listening…";
-      btn.classList.add("border-rose-500/50", "bg-rose-500/10", "text-rose-200");
-      recognition.start();
+      try {
+        recognition.start();
+      } catch (e) {
+        setIdle();
+      }
     });
 
     window.addEventListener("keydown", (e) => {

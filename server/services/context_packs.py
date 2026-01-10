@@ -131,6 +131,13 @@ def build_context_pack(
     token_estimate = _estimate_tokens("\n".join(summary_lines) + "\n\n" + compiled_text)
     return {
         "energy_override": energy_override,
+        "radar": {
+            "energy_inferred": radar.energy_inferred,
+            "deadline_risk": radar.deadline_risk,
+            "inventory_risk": radar.inventory_risk,
+            "suggested_next_actions": list(radar.suggested_next_actions or []),
+        },
+        "counts": {"logs_included": len(picked), "logs_total": len(logs)},
         "summary": "\n".join(summary_lines).strip(),
         "log_refs": refs,
         "compiled_text": compiled_text,

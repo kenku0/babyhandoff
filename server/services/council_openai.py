@@ -20,6 +20,11 @@ def _logs_to_bullets(logs: list[dict], limit: int = 40) -> str:
 
 
 def _proposal_prompt(*, archetype: Archetype, logs: list[dict], energy: str | None) -> str:
+    title_hint = {
+        "sleep_first": "Stability-first (recover + prevent cascade failures)",
+        "errands_first": "Errands-first (batch + reduce supply risk)",
+        "admin_first": "Admin-first (deadlines + logistics)",
+    }.get(archetype, "")
     return f"""You are a planning assistant. Create a concise, practical plan for the next 12 hours.
 
 Constraints:
@@ -27,6 +32,7 @@ Constraints:
 - Keep it minimal: 3 plan blocks, 3–5 top priorities, 2–3 rationale bullets.
 - Archetype: {archetype.replace("_", "-")}
 - Energy override: {energy or "auto"}
+- Suggested title: {title_hint}
 
 Notes:
 {_logs_to_bullets(logs)}
@@ -36,7 +42,8 @@ Return ONLY valid JSON with keys:
   "title": string,
   "plan_blocks": string[],
   "top_priorities": string[],
-  "rationale": string[]
+  "rationale": string[],
+  "tradeoffs": string[]
 }}
 """
 

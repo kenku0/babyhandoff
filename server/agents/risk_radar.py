@@ -33,7 +33,7 @@ def infer_energy(texts: list[str]) -> EnergyLevel | None:
 
 
 def infer_inventory_risk(logs: list[dict]) -> RiskLevel:
-    inventory_logs = [l for l in logs if l.get("type") == "inventory"]
+    inventory_logs = [l for l in logs if (l.get("type") == "inventory") or ("inventory" in (l.get("tags") or []))]
     if not inventory_logs:
         return "none"
     joined = " ".join((l.get("text") or "").lower() for l in inventory_logs)
@@ -45,7 +45,7 @@ def infer_inventory_risk(logs: list[dict]) -> RiskLevel:
 
 
 def infer_deadline_risk(logs: list[dict]) -> RiskLevel:
-    deadline_logs = [l for l in logs if l.get("type") == "deadline"]
+    deadline_logs = [l for l in logs if (l.get("type") == "deadline") or ("deadline" in (l.get("tags") or []))]
     if not deadline_logs:
         return "none"
     # MVP: heuristics only; later can parse real datetimes.
@@ -79,4 +79,3 @@ def run_risk_radar(logs: list[dict]) -> RiskRadarResult:
         inventory_risk=inv,
         suggested_next_actions=suggest_next_actions(dl, inv, energy),
     )
-

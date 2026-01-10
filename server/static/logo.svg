@@ -1,0 +1,20 @@
+<svg width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BabyHandoff">
+  <rect x="4" y="4" width="40" height="40" rx="14" fill="#09090B" stroke="#27272A" />
+  <path
+    d="M16 20h16m0 0-3-3m3 3-3 3"
+    stroke="#E4E4E7"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M32 28H16m0 0 3-3m-3 3 3 3"
+    stroke="#E4E4E7"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.85"
+  />
+  <circle cx="16" cy="20" r="2.25" fill="#818CF8" />
+  <circle cx="32" cy="28" r="2.25" fill="#818CF8" opacity="0.95" />
+</svg>

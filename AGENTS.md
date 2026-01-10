@@ -77,7 +77,7 @@ Primary: one solo operator (one caregiver juggling work/school + home). Sharing 
 - UI: server-rendered HTML (`Jinja2`) + `HTMX` for interactions; `Tailwind` (CDN) for a sleek minimal UI
 - Realtime: `HTMX` polling for Risk Radar; watcher triggers via MongoDB change streams (with fallback mode)
 - Database: MongoDB Atlas (Motor async driver) as durable context + audit log
-- Models: deterministic heuristic council by default; optional OpenAI proposals via `COUNCIL_MODE=openai` + `OPENAI_MODEL=gpt-5.2`
+- Models: deterministic heuristic council by default; optional LLM proposals via `COUNCIL_MODE=openai`, `COUNCIL_MODE=anthropic`, `COUNCIL_MODE=gemini`, or `COUNCIL_MODE=multi`
 - Voice-to-text: browser Web Speech API (fills the same text input; graceful fallback to typing)
 
 ## Core Screens (Desktop-first)
@@ -155,8 +155,8 @@ We persist both the work graph and the “debate” so judges can replay the run
   - `status`: `queued | running | completed | failed`
   - `attempt`: integer, `max_attempts`: integer (computed as `1 + AGENT_MAX_RETRIES`)
   - `started_at`, `finished_at`, `updated_at`
-  - `inputs`: `{ context_pack_id, proposal_ids, decision_id }` (as applicable)
-  - `outputs`: `{ proposal_id, decision_id, artifact_id, llm_used, attempts, fallback, error }` (as applicable)
+  - `inputs`: `{ context_pack_id, provider, model, timeout_s, proposal_ids, decision_id }` (as applicable)
+  - `outputs`: `{ proposal_id, decision_id, artifact_id, llm_used, provider, model, attempts, fallback, error }` (as applicable)
   - `error`: `{ type, message }` (optional)
 - `messages` (append-only “chat log”):
   - `shift_id`, `run_id`, `task_id`
@@ -170,13 +170,16 @@ In addition, every run writes a **Council Transcript Markdown** artifact suitabl
 
 - `context_packs` (token-budgeted shared inputs):
   - `shift_id`, `run_id`, `token_budget`
-  - `summary` + `compiled_text` + `log_refs[]`
+  - `summary` + `compiled_text` + `log_refs[]` + `token_estimate` + `included_log_ids[]`
+  - `trim_strategy` + `normalized` (structured view of tasks/deadlines/inventory/notes)
   - `created_at`
 
 ### LLM Provider (MVP Implementation)
 - Default: `COUNCIL_MODE=heuristic` (no external calls)
-- Optional: `COUNCIL_MODE=openai` uses OpenAI for the three planner proposals (Sleep/Errands/Admin) and falls back to heuristic proposals if the API call fails
-- Retries + timeout are controlled by `AGENT_MAX_RETRIES` and `AGENT_TIMEOUT_SECONDS` and are persisted in `tasks.outputs` for audit
+- Optional: `COUNCIL_MODE=openai|anthropic|gemini` uses a single provider for the three planner proposals (Sleep/Errands/Admin) and falls back to heuristic proposals if the API call fails
+- Optional: `COUNCIL_MODE=multi` can mix providers per archetype with a deterministic fallback order (still persisting providers tried + failures)
+- Referee (judge): if `OPENAI_API_KEY` is set and `COUNCIL_MODE in {openai,multi}`, the Referee will also try an OpenAI JSON judge for rubric scoring; it falls back to deterministic scoring if the judge fails
+- Retries + timeout are controlled by `AGENT_MAX_RETRIES` and `AGENT_TIMEOUT_SECONDS` and are persisted in `tasks.inputs/outputs` + `events` for audit
 
 Stretch goal: swap in additional providers behind a unified interface without changing the MongoDB persistence model (`tasks` + `messages` + `artifacts`).
 
@@ -184,11 +187,13 @@ Stretch goal: swap in additional providers behind a unified interface without ch
 Default context pack budget: **~4k tokens** (configurable).
 MVP trimming strategy:
 - Persist one `context_pack` per run with `summary` + `compiled_text` + `log_refs[]`
-- Include the most recent ~40 logs (keeps prompts small and demos reliable)
+- Enforce `CONTEXT_PACK_TOKEN_BUDGET` using a cheap token estimate (chars/token) and trim by:
+  - Must-keep (most recent): `Deadline`, `Running low`, then `Task`
+  - Fill remaining budget by recency across all logs
+  - Persist `included_log_ids[]` so evidence links remain stable and replayable
 
 Upgrade path (post-MVP):
-- Prioritize `Deadline` + `Running low` over generic notes when trimming
-- Keep stable log IDs in `log_refs` so evidence links remain valid
+- Swap the token estimator for a real tokenizer (or provider token counter) without changing the persistence model
 
 ### Rubric Scoring (Deterministic MVP)
 The Referee uses a deterministic rubric scorer so runs are fast and replayable:
@@ -211,6 +216,7 @@ Agents can time out or fail; the Coordinator must still produce a usable output:
 - Per-agent timeout: `AGENT_TIMEOUT_SECONDS` (applies to OpenAI planner calls)
 - Retries: up to `1 + AGENT_MAX_RETRIES` attempts with exponential backoff
 - Fallback: if a planner’s LLM call fails, the system uses the deterministic heuristic proposal for that archetype and records the error in `tasks.outputs`
+- Referee fallback: if OpenAI referee scoring fails, the system persists the deterministic rubric decision
 - Run completion: the council still completes and produces `handoff_markdown` + `council_transcript_markdown`
 
 ## Skill-Based Delegation (Hackathon Visible)
@@ -232,7 +238,7 @@ MongoDB is the system of record for durable context, collaboration, and audit:
 - `shifts`: operator context + window
 - `logs`: raw notes + metadata
 - `shift_state`: computed Risk Radar state
-- `runs`: each council execution (status, timings)
+- `runs`: each council execution (status, timings, council_mode, non-secret LLM config)
 - `tasks`: agent tasks + retries + assignments + model used
 - `events`: append-only run timeline (demo-friendly “audit log”)
 - `messages`: inter-agent communications

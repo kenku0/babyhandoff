@@ -193,3 +193,17 @@ details > summary {
 details > summary::-webkit-details-marker {
   display: none;
 }
+
+/* HTMX live updates */
+#run-main.htmx-request {
+  opacity: 0.85;
+}
+
+/* Sticky side panel should scroll internally on large screens */
+@media (min-width: 1024px) {
+  .sticky-panel {
+    max-height: min(62vh, calc(100vh - 7rem));
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+}

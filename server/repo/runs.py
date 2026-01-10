@@ -14,11 +14,20 @@ class RunsRepo:
     def __init__(self, db: AsyncIOMotorDatabase) -> None:
         self._col = db["runs"]
 
-    async def create(self, shift_id: str, energy_override: str | None) -> str:
+    async def create(
+        self,
+        shift_id: str,
+        *,
+        energy_override: str | None,
+        council_mode: str,
+        llm: dict | None = None,
+    ) -> str:
         doc = {
             "shift_id": shift_id,
             "status": "running",
             "energy_override": energy_override,
+            "council_mode": council_mode,
+            "llm": llm or {},
             "created_at": _now(),
             "updated_at": _now(),
         }

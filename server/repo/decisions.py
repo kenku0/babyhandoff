@@ -28,5 +28,7 @@ class DecisionsRepo:
         return str(found["_id"])
 
     async def get_for_run(self, run_id: str) -> dict | None:
-        return await self._col.find_one({"run_id": run_id})
-
+        doc = await self._col.find_one({"run_id": run_id})
+        if doc:
+            doc["_id"] = str(doc["_id"])
+        return doc

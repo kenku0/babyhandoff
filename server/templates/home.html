@@ -7,11 +7,22 @@
         <p class="mt-1 text-sm text-zinc-400">
           Capture messy notes. Get a rubric-scored Decision Card + a clean handoff.
         </p>
-        <div class="mt-4 flex flex-wrap gap-2 text-xs text-zinc-400">
-          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">12h plan</span>
-          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">24h outlook</span>
-          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">Evidence-linked rationale</span>
-          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">Markdown export</span>
+        <div class="mt-4 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">
+            <span class="text-zinc-500">1</span> New shift
+          </span>
+          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">
+            <span class="text-zinc-500">2</span> Add notes
+          </span>
+          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">
+            <span class="text-zinc-500">3</span> Generate plan
+          </span>
+          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">
+            <span class="text-zinc-500">4</span> Export
+          </span>
+        </div>
+        <div class="mt-3 text-xs text-zinc-500">
+          Outputs: <span class="text-zinc-300">12h plan</span> · <span class="text-zinc-300">24h outlook</span> · <span class="text-zinc-300">evidence links</span> · <span class="text-zinc-300">Markdown export</span>
         </div>
       </div>
       <div class="flex flex-wrap gap-2">
@@ -24,7 +35,7 @@
         </form>
         <form action="/shifts/new" method="post">
           <button
-            class="rounded-2xl bg-gradient-to-br from-zinc-100 to-white px-4 py-2 text-sm font-semibold text-zinc-950 shadow hover:from-white hover:to-white"
+            class="rounded-2xl bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-950 shadow hover:bg-white"
           >
             New shift
           </button>
@@ -46,14 +57,62 @@
         class="group rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] transition hover:border-zinc-700/80 hover:bg-zinc-950/70"
         href="/shifts/{{ s['_id'] }}"
       >
-        <div class="flex items-center justify-between">
-          <div class="text-sm font-semibold text-zinc-100">
-            Shift <span class="text-zinc-500">·</span> <span class="text-zinc-300">{{ s['_id'][:6] }}</span>
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <div class="truncate text-sm font-semibold text-zinc-100">
+              {{ s.title or "Untitled shift" }}
+            </div>
+            <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
+              <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5 text-[11px] text-zinc-400">
+                id {{ s['_id'][:6] }}
+              </span>
+              <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5 text-[11px] text-zinc-400">
+                {{ s.log_count or 0 }} entries
+              </span>
+              <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5 text-[11px] text-zinc-400">
+                {{ s.run_count or 0 }} runs
+              </span>
+              {% if s.created_at_iso %}
+                <span>
+                  Started
+                  <time data-time="local" datetime="{{ s.created_at_iso }}">{{ s.created_at }}</time>
+                </span>
+              {% endif %}
+              {% if s.created_at_iso and s.window_end_iso %}
+                <span class="text-zinc-600">·</span>
+                <span>
+                  Window
+                  <time data-time="local" datetime="{{ s.created_at_iso }}">{{ s.created_at }}</time>
+                  →
+                  <time data-time="local" datetime="{{ s.window_end_iso }}">end</time>
+                </span>
+              {% endif %}
+              {% if s.updated_at_iso %}
+                <span>
+                  Updated
+                  <time data-time="relative" datetime="{{ s.updated_at_iso }}">{{ s.updated_at }}</time>
+                </span>
+              {% endif %}
+              {% if s.last_run_at_iso %}
+                <span class="inline-flex items-center gap-1">
+                  Last run
+                  <time data-time="relative" datetime="{{ s.last_run_at_iso }}">recently</time>
+                  {% if s.last_run_status %}
+                    <span class="rounded-full border px-2 py-0.5 text-[11px]
+                      {% if s.last_run_status == 'completed' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+                      {% elif s.last_run_status == 'running' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                      {% elif s.last_run_status == 'failed' %}border-rose-500/40 bg-rose-500/10 text-rose-200
+                      {% else %}border-zinc-800/80 bg-zinc-950/40 text-zinc-400{% endif %}">
+                      {{ s.last_run_status }}
+                    </span>
+                  {% endif %}
+                </span>
+              {% endif %}
+            </div>
           </div>
-          <div class="text-xs text-zinc-500">Updated {{ s.updated_at }}</div>
-        </div>
-        <div class="mt-3 text-sm text-zinc-400 group-hover:text-zinc-300">
-          Open shift → add notes → generate plan
+          <div class="mt-0.5 text-xs text-zinc-600 group-hover:text-zinc-500">
+            Open → add notes → generate
+          </div>
         </div>
       </a>
     {% endfor %}
