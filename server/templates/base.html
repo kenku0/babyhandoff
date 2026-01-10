@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title if title else "BabyHandoff" }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body class="bg-zinc-950 text-zinc-100 selection:bg-indigo-500/30 selection:text-zinc-100">
+    <div class="min-h-screen bg-[radial-gradient(1000px_600px_at_20%_-20%,rgba(99,102,241,0.25),transparent_60%),radial-gradient(900px_600px_at_90%_-30%,rgba(236,72,153,0.18),transparent_55%)]">
+      <header class="sticky top-0 z-50 border-b border-zinc-800/80 bg-zinc-950/70 backdrop-blur">
+        <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+          <a href="/" class="flex items-center gap-3">
+            <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-amber-400"></div>
+            <div>
+              <div class="text-base font-semibold leading-5">BabyHandoff</div>
+              <div class="text-xs text-zinc-400">It takes a village.</div>
+            </div>
+          </a>
+          <div class="flex flex-wrap items-center justify-end gap-2 text-xs text-zinc-400">
+            {% set watchers_on = request.app.state.change_streams_enabled %}
+            {% set council_mode = request.app.state.settings.council_mode %}
+            {% set llm_ready = (council_mode == 'openai') and (request.app.state.settings.openai_api_key) %}
+            {% set demo = request.app.state.settings.demo_mode %}
+            <span class="rounded-full border px-2 py-1
+              {% if watchers_on %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+              {% else %}border-amber-500/40 bg-amber-500/10 text-amber-200{% endif %}">
+              Watchers: {{ "on" if watchers_on else "fallback" }}
+            </span>
+            <span class="rounded-full border px-2 py-1
+              {% if llm_ready %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
+              {% elif council_mode == 'openai' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+              {% else %}border-zinc-800/80 bg-zinc-950/50 text-zinc-300{% endif %}">
+              Council: {{ council_mode }}{% if council_mode == 'openai' and not llm_ready %} (key missing){% endif %}
+            </span>
+            {% if demo %}
+              <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2 py-1 text-zinc-300">
+                Demo
+              </span>
+            {% endif %}
+            <span class="text-zinc-500">Planning tool · Not medical advice</span>
+          </div>
+        </div>
+      </header>
+      <main class="mx-auto max-w-7xl px-6 py-8">
+        {% block content %}{% endblock %}
+      </main>
+      <footer class="mx-auto max-w-7xl px-6 pb-10 text-xs text-zinc-500">
+        <div class="border-t border-zinc-800/80 pt-6">
+          BabyHandoff is a planning tool. It does not provide medical advice.
+        </div>
+      </footer>
+    </div>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

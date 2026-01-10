@@ -1,0 +1,12 @@
+.DS_Store
+.env
+.venv/
+__pycache__/
+*.pyc
+.pycache/
+.pytest_cache/
+.mypy_cache/
+.pycache/
+node_modules/
+dist/
+build/

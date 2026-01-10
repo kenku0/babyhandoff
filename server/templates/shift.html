@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <div class="lg:col-span-2">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-semibold tracking-tight">Current shift</h1>
+          <p class="mt-1 text-sm text-zinc-400">Capture reality. The village handles structure.</p>
+        </div>
+        <div class="flex gap-3">
+          <form action="/shifts/{{ shift['_id'] }}/sample" method="post">
+            <button class="rounded-2xl border border-zinc-700/80 bg-zinc-950/55 px-4 py-2 text-sm font-semibold text-zinc-100 hover:border-zinc-600/80">
+              Load sample shift
+            </button>
+          </form>
+          <a href="/" class="rounded-2xl border border-zinc-800/80 bg-zinc-950/55 px-4 py-2 text-sm font-semibold text-zinc-300 hover:border-zinc-700/80">
+            Back
+          </a>
+        </div>
+      </div>
+
+      <div class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+        <form action="/shifts/{{ shift['_id'] }}/logs" method="post" class="grid gap-4">
+          <div>
+            <label class="text-sm font-semibold">Add entry</label>
+            <div class="mt-2 flex flex-wrap gap-2">
+              {% for (value, label) in [("note","Note"),("task","Task"),("deadline","Deadline"),("inventory","Running low")] %}
+                <label class="inline-flex cursor-pointer items-center gap-2 rounded-full border border-zinc-800/80 bg-zinc-950/50 px-3 py-1 text-xs text-zinc-300 transition hover:border-zinc-700/80">
+                  <input class="accent-indigo-500" type="radio" name="log_type" value="{{ value }}" {% if value == "note" %}checked{% endif %} />
+                  {{ label }}
+                </label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-semibold text-zinc-200">Input</div>
+            <button
+              type="button"
+              id="voice-btn"
+              class="rounded-2xl border border-zinc-800/80 bg-zinc-950/55 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:border-zinc-700/80"
+            >
+              Voice
+            </button>
+          </div>
+
+          <textarea
+            id="note-text"
+            name="text"
+            rows="4"
+            placeholder="Type a quick note…"
+            class="w-full rounded-2xl border border-zinc-800/80 bg-zinc-950/55 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-600/80 focus:outline-none"
+            required
+            autofocus
+          ></textarea>
+
+          <div class="flex items-center justify-between">
+            <div class="text-xs text-zinc-500">Tip: keep it messy. Agents will normalize. <span class="text-zinc-600">Cmd+Enter</span> to add.</div>
+            <button class="rounded-2xl bg-gradient-to-br from-zinc-100 to-white px-4 py-2 text-sm font-semibold text-zinc-950 shadow hover:from-white hover:to-white">
+              Add
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="mt-6">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-zinc-200">Timeline</h2>
+          <div class="text-xs text-zinc-500">{{ logs|length }} entries</div>
+        </div>
+        <div class="mt-3 grid gap-2">
+          {% if logs|length == 0 %}
+            <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-6 text-sm text-zinc-400">
+              No entries yet.
+            </div>
+          {% endif %}
+          {% for l in logs %}
+            {% set t = (l.type or "")|lower %}
+            <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span
+                    class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
+                    {% if t == 'deadline' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                    {% elif t == 'inventory' %}border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200
+                    {% elif t == 'task' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
+                    {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}"
+                  >
+                    {{ l.type|upper }}
+                  </span>
+                </div>
+                <div class="text-xs text-zinc-500">{{ l.created_at }}</div>
+              </div>
+              <div class="mt-2 text-sm text-zinc-100">{{ l.text }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="lg:col-span-1">
+      <div
+        class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] lg:sticky lg:top-24"
+        hx-get="/shifts/{{ shift['_id'] }}/risk"
+        hx-trigger="load, every 2s"
+        hx-swap="innerHTML"
+      >
+        <div class="text-sm text-zinc-400">Loading Risk Radar…</div>
+      </div>
+
+      <div class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+        <div class="text-sm font-semibold">Village Council</div>
+        <div class="mt-2 text-sm text-zinc-400">
+          Generate three competing plans and auto-select the best (next 12h + lightweight 24h outlook).
+        </div>
+        <form action="/shifts/{{ shift['_id'] }}/runs" method="post" class="mt-4 grid gap-3">
+          <label class="text-xs font-semibold text-zinc-300">Energy (what-if)</label>
+          <div class="flex flex-wrap gap-2">
+            {% for (value, label, checked) in [("","Auto",true),("high","High",false),("medium","Medium",false),("low","Low",false)] %}
+              <label class="cursor-pointer">
+                <input class="peer sr-only" type="radio" name="energy" value="{{ value }}" {% if checked %}checked{% endif %} />
+                <span class="inline-flex items-center rounded-full border border-zinc-800/80 bg-zinc-950/40 px-3 py-1 text-xs text-zinc-300 transition peer-checked:border-indigo-500/40 peer-checked:bg-indigo-500/10 peer-checked:text-indigo-200 hover:border-zinc-700/80">
+                  {{ label }}
+                </span>
+              </label>
+            {% endfor %}
+          </div>
+          <button id="generate-btn" class="w-full rounded-2xl bg-gradient-to-br from-zinc-100 to-white px-4 py-2 text-sm font-semibold text-zinc-950 shadow hover:from-white hover:to-white">
+            Generate plan
+          </button>
+        </form>
+        {% if (runs or [])|length > 0 %}
+          <a
+            href="/shifts/{{ shift['_id'] }}/runs/{{ runs[0]['_id'] }}"
+            class="mt-3 inline-flex items-center justify-center rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-zinc-700/80"
+          >
+            Open latest run
+          </a>
+        {% endif %}
+      </div>
+
+      <div class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">Recent runs</div>
+          <div class="text-xs text-zinc-500">{{ (runs or [])|length }} shown</div>
+        </div>
+        <div class="mt-4 grid gap-2">
+          {% for r in runs or [] %}
+            {% set status = (r.status or "")|lower %}
+            <a
+              href="/shifts/{{ shift['_id'] }}/runs/{{ r['_id'] }}"
+              class="group flex items-center justify-between rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-4 py-3 text-xs transition hover:border-zinc-700/80"
+            >
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <div class="font-semibold text-zinc-200">run {{ r['_id'][:6] }}</div>
+                  {% if r.energy_override %}
+                    <span class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2 py-0.5 text-[11px] text-zinc-400">
+                      energy: {{ r.energy_override }}
+                    </span>
+                  {% endif %}
+                </div>
+                <div class="mt-1 text-[11px] text-zinc-500">Started {{ r.created_at }}</div>
+              </div>
+              <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
+                {% if status == 'completed' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+                {% elif status == 'running' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                {% elif status == 'failed' %}border-rose-500/40 bg-rose-500/10 text-rose-200
+                {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+                {{ r.status }}
+              </span>
+            </a>
+          {% endfor %}
+          {% if (runs or [])|length == 0 %}
+            <div class="text-sm text-zinc-400">
+              No runs yet. Generate one to get a Decision Card + handoff export.
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    const btn = document.getElementById("voice-btn");
+    const textarea = document.getElementById("note-text");
+    if (!btn || !textarea) return;
+
+    const form = textarea.closest("form");
+    textarea.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && form) form.submit();
+    });
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      btn.disabled = true;
+      btn.textContent = "Voice unsupported";
+      btn.classList.add("opacity-50");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    let listening = false;
+    let finalText = "";
+
+    recognition.onresult = (event) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) finalText += transcript + " ";
+        else interim += transcript;
+      }
+      textarea.value = (finalText + interim).trim();
+    };
+
+    recognition.onend = () => {
+      listening = false;
+      btn.textContent = "Voice";
+      btn.classList.remove("border-rose-500/50", "bg-rose-500/10", "text-rose-200");
+    };
+
+    recognition.onerror = () => {
+      listening = false;
+      btn.textContent = "Voice";
+      btn.classList.remove("border-rose-500/50", "bg-rose-500/10", "text-rose-200");
+    };
+
+    btn.addEventListener("click", () => {
+      if (listening) return;
+      listening = true;
+      finalText = textarea.value ? textarea.value.trim() + " " : "";
+      btn.textContent = "Listening…";
+      btn.classList.add("border-rose-500/50", "bg-rose-500/10", "text-rose-200");
+      recognition.start();
+    });
+
+    window.addEventListener("keydown", (e) => {
+      if (!listening) return;
+      if (e.key === "Escape") recognition.stop();
+    });
+
+    const generateBtn = document.getElementById("generate-btn");
+    if (generateBtn) {
+      const generateForm = generateBtn.closest("form");
+      if (generateForm) {
+        generateForm.addEventListener("submit", () => {
+          generateBtn.disabled = true;
+          generateBtn.textContent = "Generating…";
+          generateBtn.classList.add("opacity-80");
+        });
+      }
+    }
+  })();
+</script>
+{% endblock %}

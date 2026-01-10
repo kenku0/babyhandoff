@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_10px_30px_-20px_rgba(0,0,0,0.8)]">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-semibold tracking-tight">Shifts</h1>
+        <p class="mt-1 text-sm text-zinc-400">
+          Capture messy notes. Get a rubric-scored Decision Card + a clean handoff.
+        </p>
+        <div class="mt-4 flex flex-wrap gap-2 text-xs text-zinc-400">
+          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">12h plan</span>
+          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">24h outlook</span>
+          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">Evidence-linked rationale</span>
+          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">Markdown export</span>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <form action="/demo" method="post">
+          <button
+            class="rounded-2xl border border-indigo-500/40 bg-indigo-500/10 px-4 py-2 text-sm font-semibold text-indigo-200 hover:bg-indigo-500/15"
+          >
+            Demo shift
+          </button>
+        </form>
+        <form action="/shifts/new" method="post">
+          <button
+            class="rounded-2xl bg-gradient-to-br from-zinc-100 to-white px-4 py-2 text-sm font-semibold text-zinc-950 shadow hover:from-white hover:to-white"
+          >
+            New shift
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-6 grid gap-3">
+    {% if shifts|length == 0 %}
+      <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-6 text-sm text-zinc-400">
+        <div class="font-semibold text-zinc-200">No shifts yet.</div>
+        <div class="mt-1">Create one to start capturing notes.</div>
+      </div>
+    {% endif %}
+
+    {% for s in shifts %}
+      <a
+        class="group rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] transition hover:border-zinc-700/80 hover:bg-zinc-950/70"
+        href="/shifts/{{ s['_id'] }}"
+      >
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold text-zinc-100">
+            Shift <span class="text-zinc-500">·</span> <span class="text-zinc-300">{{ s['_id'][:6] }}</span>
+          </div>
+          <div class="text-xs text-zinc-500">Updated {{ s.updated_at }}</div>
+        </div>
+        <div class="mt-3 text-sm text-zinc-400 group-hover:text-zinc-300">
+          Open shift → add notes → generate plan
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+{% endblock %}

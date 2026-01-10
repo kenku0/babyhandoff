@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+{% block content %}
+  {% set run_status = (run.status or "")|lower %}
+  <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-semibold tracking-tight">Village Council</h1>
+        <p class="mt-1 text-sm text-zinc-400">Three plans. One decision. Evidence-linked.</p>
+        <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <span class="rounded-full border px-2.5 py-1 font-semibold
+            {% if run_status == 'completed' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+            {% elif run_status == 'running' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+            {% elif run_status == 'failed' %}border-rose-500/40 bg-rose-500/10 text-rose-200
+            {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+            {{ run.status }}
+          </span>
+          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 text-zinc-400">run {{ run['_id'] }}</span>
+          {% if run_status == 'running' %}
+            <span class="text-zinc-500">Auto-refreshing…</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <a href="/shifts/{{ shift_id }}" class="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 px-4 py-2 text-sm font-semibold text-zinc-300 hover:border-zinc-700/80">
+          Back to shift
+        </a>
+        {% if council_artifact %}
+          <a href="/shifts/{{ shift_id }}/runs/{{ run['_id'] }}/council.md" class="rounded-2xl border border-zinc-700/80 bg-zinc-950/50 px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-zinc-600/80">
+            Download council.md
+          </a>
+        {% endif %}
+        {% if artifact %}
+          <a href="/shifts/{{ shift_id }}/runs/{{ run['_id'] }}/handoff.md" class="rounded-2xl bg-gradient-to-br from-zinc-100 to-white px-4 py-2 text-sm font-semibold text-zinc-950 shadow hover:from-white hover:to-white">
+            Download handoff.md
+          </a>
+        {% else %}
+          <span class="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 px-4 py-2 text-sm font-semibold text-zinc-500">
+            {% if run_status == 'running' %}Generating handoff…{% else %}Handoff unavailable{% endif %}
+          </span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="mt-5 border-t border-zinc-800/80 pt-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="text-sm font-semibold">What-if re-run</div>
+        <form action="/shifts/{{ shift_id }}/runs" method="post" class="flex flex-wrap items-center gap-2">
+          <div class="text-xs text-zinc-500">Energy</div>
+          {% for (value, label, checked) in [("","Auto",true),("high","High",false),("medium","Medium",false),("low","Low",false)] %}
+            <label class="cursor-pointer">
+              <input class="peer sr-only" type="radio" name="energy" value="{{ value }}" {% if checked %}checked{% endif %} />
+              <span class="inline-flex items-center rounded-full border border-zinc-800/80 bg-zinc-950/40 px-3 py-1 text-xs text-zinc-300 transition peer-checked:border-indigo-500/40 peer-checked:bg-indigo-500/10 peer-checked:text-indigo-200 hover:border-zinc-700/80">
+                {{ label }}
+              </span>
+            </label>
+          {% endfor %}
+          <button class="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-700/80">
+            Re-run council
+          </button>
+        </form>
+      </div>
+      <div class="mt-2 text-xs text-zinc-500">
+        Creates a new run and shows a v1→v2 diff in the handoff card.
+      </div>
+    </div>
+  </div>
+
+  {% if decision %}
+    {% set sel = (decision.selected_archetype or "")|lower %}
+    <div class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div class="text-xs font-semibold text-zinc-400">Selected plan</div>
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <div class="text-2xl font-semibold tracking-tight">{{ decision.selected_archetype.replace("_", "-") }}</div>
+            <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
+              {% if sel == 'sleep_first' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
+              {% elif sel == 'errands_first' %}border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200
+              {% elif sel == 'admin_first' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+              {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+              Decision Card
+            </span>
+          </div>
+          <div class="mt-3 max-w-3xl text-sm text-zinc-300">{{ decision.summary }}</div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <div class="space-y-6 lg:col-span-2">
+      {% if context_pack %}
+        <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-semibold">Context Pack</div>
+            <div class="text-xs text-zinc-500">
+              budget {{ context_pack.token_budget }} · logs {{ (context_pack.log_refs or [])|length }}
+            </div>
+          </div>
+          {% if context_pack.summary %}
+            <div class="mt-3 whitespace-pre-line text-xs text-zinc-400">{{ context_pack.summary }}</div>
+          {% endif %}
+          {% if context_pack_html %}
+            <div class="mt-4 prose prose-invert prose-zinc max-w-none text-sm">
+              {{ context_pack_html | safe }}
+            </div>
+          {% endif %}
+        </div>
+      {% elif run_status == 'running' %}
+        <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 text-sm text-zinc-400 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+          Building context pack…
+        </div>
+      {% endif %}
+
+      <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">Run Tasks</div>
+          <div class="text-xs text-zinc-500">delegation log</div>
+        </div>
+        <div class="mt-4 grid gap-2">
+          {% for t in tasks %}
+            {% set status = (t.status or "")|lower %}
+            <div class="flex items-center justify-between rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-4 py-3 text-xs">
+              <div>
+                <div class="font-semibold text-zinc-200">{{ t.name }}</div>
+                <div class="text-zinc-500">{{ t.agent_name }}</div>
+                <div class="mt-1 text-[11px] text-zinc-600">
+                  {% if t.meta and t.meta.skill %}skill: {{ t.meta.skill }}{% endif %}
+                  {% set shown_attempt = (t.outputs.attempts if t.outputs and (t.outputs.attempts is not none) else t.attempt) %}
+                  {% if shown_attempt and t.max_attempts %} · attempt {{ shown_attempt }}/{{ t.max_attempts }}{% endif %}
+                  {% if t.outputs and (t.outputs.llm_used is not none) %} · llm {{ "yes" if t.outputs.llm_used else "no" }}{% endif %}
+                  {% if t.outputs and t.outputs.fallback %} · fallback{% endif %}
+                </div>
+                {% if t.outputs and t.outputs.error %}
+                  <div class="mt-1 text-[11px] text-rose-300">error: {{ t.outputs.error }}</div>
+                {% endif %}
+                {% if t.error and t.error.message %}
+                  <div class="mt-1 text-[11px] text-rose-300">error: {{ t.error.type }}: {{ t.error.message }}</div>
+                {% endif %}
+              </div>
+              <div class="rounded-full border px-3 py-1 text-[11px] font-semibold
+                {% if status == 'completed' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+                {% elif status == 'running' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                {% elif status == 'failed' %}border-rose-500/40 bg-rose-500/10 text-rose-200
+                {% elif status == 'queued' %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300
+                {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+                {{ t.status }}
+              </div>
+            </div>
+          {% endfor %}
+          {% if tasks|length == 0 %}
+            <div class="text-sm text-zinc-400">No tasks recorded.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">Decision Card</div>
+          <div class="text-xs text-zinc-500">rubric</div>
+        </div>
+
+        {% if decision %}
+          <div class="mt-4">
+            <div class="text-xs font-semibold text-zinc-300">Rubric Scores</div>
+            <div class="mt-2 overflow-hidden rounded-2xl border border-zinc-800/80">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-zinc-950/50">
+                  <tr class="text-zinc-400">
+                    <th class="px-3 py-2">Archetype</th>
+                    <th class="px-3 py-2">Total</th>
+                    <th class="px-3 py-2">Deadline</th>
+                    <th class="px-3 py-2">Energy</th>
+                    <th class="px-3 py-2">Inventory</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for key, scores in decision.scores.items() %}
+                    <tr class="border-t border-zinc-800/80 {% if key == decision.selected_archetype %}bg-indigo-500/5{% endif %}">
+                      <td class="px-3 py-2 font-semibold text-zinc-200">{{ key.replace("_", "-") }}</td>
+                      <td class="px-3 py-2 text-zinc-300">{{ scores._total.score }}</td>
+                      <td class="px-3 py-2 text-zinc-300">{{ scores.deadline_risk.score }}</td>
+                      <td class="px-3 py-2 text-zinc-300">{{ scores.energy_match.score }}</td>
+                      <td class="px-3 py-2 text-zinc-300">{{ scores.inventory_risk.score }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="mt-5 border-t border-zinc-800/80 pt-4">
+            <div class="text-xs font-semibold text-zinc-300">Evidence</div>
+            <div class="mt-3 grid gap-2">
+              {% for e in decision.evidence_links or [] %}
+                {% set t = (e.type or "")|lower %}
+                <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 p-3 text-xs text-zinc-300">
+                  <div class="flex items-center justify-between">
+                    <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
+                      {% if t == 'deadline' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                      {% elif t == 'inventory' %}border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200
+                      {% elif t == 'task' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
+                      {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+                      {{ (e.type or "note")|upper }}
+                    </span>
+                    <span class="text-[11px] text-zinc-500">linked</span>
+                  </div>
+                  <div class="mt-2">{{ e.text }}</div>
+                </div>
+              {% endfor %}
+              {% if (decision.evidence_links or [])|length == 0 %}
+                <div class="text-sm text-zinc-400">No evidence links recorded.</div>
+              {% endif %}
+            </div>
+          </div>
+        {% else %}
+          {% if run_status == 'running' %}
+            <div class="mt-4 text-sm text-zinc-400">Decision pending…</div>
+          {% else %}
+            <div class="mt-4 text-sm text-zinc-400">Decision not found.</div>
+          {% endif %}
+        {% endif %}
+      </div>
+
+      <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+        <div class="text-sm font-semibold">Proposals</div>
+        <div class="mt-3 text-sm text-zinc-400">
+          Expand to see the three competing plans. The winner is highlighted.
+        </div>
+        <div class="mt-4 grid gap-3">
+          {% for p in proposals %}
+            <details class="group rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] {% if decision and p.archetype == decision.selected_archetype %}ring-1 ring-indigo-500/25{% endif %}" {% if decision and p.archetype == decision.selected_archetype %}open{% endif %}>
+              <summary class="flex cursor-pointer list-none items-center justify-between gap-4">
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <div class="text-sm font-semibold">{{ p.title }}</div>
+                    {% if decision and p.archetype == decision.selected_archetype %}
+                      <span class="rounded-full border border-indigo-500/40 bg-indigo-500/10 px-2.5 py-1 text-[11px] font-semibold text-indigo-200">
+                        Selected
+                      </span>
+                    {% endif %}
+                  </div>
+                  <div class="mt-1 text-xs text-zinc-500">{{ p.archetype.replace("_", "-") }}</div>
+                </div>
+                <div class="text-xs text-zinc-400 group-open:text-zinc-200">Details</div>
+              </summary>
+              <div class="mt-4 grid gap-2">
+                <div class="text-xs font-semibold text-zinc-300">Blocks</div>
+                <ul class="list-disc pl-5 text-sm text-zinc-300">
+                  {% for b in p.plan_blocks %}
+                    <li>{{ b }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+            </details>
+          {% endfor %}
+          {% if proposals|length == 0 %}
+            <div class="text-sm text-zinc-400">
+              {% if run_status == 'running' %}Generating proposals…{% else %}No proposals found.{% endif %}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="lg:col-span-1">
+      <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] lg:sticky lg:top-24">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">Handoff</div>
+          {% if artifact %}
+            <div class="text-xs text-zinc-500">v{{ artifact.version }}</div>
+          {% endif %}
+        </div>
+        {% if artifact %}
+          <div class="markdown mt-4 text-sm">
+            {{ artifact_html | safe }}
+          </div>
+          {% if artifact.diff %}
+            <div class="mt-5 border-t border-zinc-800 pt-4">
+              <div class="text-xs font-semibold text-zinc-300">Diff</div>
+              <pre class="mt-2 overflow-auto rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-[11px] text-zinc-300">{{ artifact.diff }}</pre>
+            </div>
+          {% endif %}
+        {% else %}
+          <div class="mt-4 text-sm text-zinc-400">
+            {% if run_status == 'running' %}Generating handoff…{% else %}No handoff artifact found.{% endif %}
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">Event Stream</div>
+          <div class="text-xs text-zinc-500">run events</div>
+        </div>
+        <div class="mt-4 grid gap-2">
+          {% for e in events %}
+            <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-400">
+              <div class="flex items-center justify-between">
+                <div class="font-semibold text-zinc-300">{{ e.agent or "System" }}</div>
+                <div class="text-[11px] text-zinc-500">{{ e.created_at }}</div>
+              </div>
+              <div class="mt-1">{{ e.message or e.type }}</div>
+            </div>
+          {% endfor %}
+          {% if events|length == 0 %}
+            <div class="text-xs text-zinc-500">No events.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">Council Transcript</div>
+          {% if council_artifact %}
+            <div class="text-xs text-zinc-500">v{{ council_artifact.version }}</div>
+          {% endif %}
+        </div>
+        {% if council_artifact %}
+          <div class="markdown mt-4 text-sm">
+            {{ council_html | safe }}
+          </div>
+          {% if council_artifact.diff %}
+            <div class="mt-5 border-t border-zinc-800 pt-4">
+              <div class="text-xs font-semibold text-zinc-300">Diff</div>
+              <pre class="mt-2 overflow-auto rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-[11px] text-zinc-300">{{ council_artifact.diff }}</pre>
+            </div>
+          {% endif %}
+        {% else %}
+          <div class="mt-4 text-sm text-zinc-400">
+            {% if run_status == 'running' %}Transcript will appear when the run finishes.{% else %}No council transcript found.{% endif %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  {% set run_status = (run.status or "")|lower %}
+  {% if run_status == "running" %}
+    <script>
+      (function () {
+        window.setTimeout(function () {
+          window.location.reload();
+        }, 1500);
+      })();
+    </script>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,78 @@
+<div class="htmx-fade-in">
+  <div class="flex items-center justify-between">
+    <div class="text-sm font-semibold">Risk Radar</div>
+    <div class="text-xs text-zinc-500">auto</div>
+  </div>
+
+  {% if state %}
+    {% set energy = (state.energy_inferred or "")|lower %}
+    {% set deadline = (state.deadline_risk or "")|lower %}
+    {% set inventory = (state.inventory_risk or "")|lower %}
+    <div class="mt-4 grid gap-3 text-sm">
+      <div class="flex items-center justify-between">
+        <div class="text-zinc-400">Energy (inferred)</div>
+        <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
+          {% if energy == 'low' %}border-rose-500/40 bg-rose-500/10 text-rose-200
+          {% elif energy == 'high' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+          {% elif energy == 'medium' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
+          {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+          {{ state.energy_inferred or "—" }}
+        </span>
+      </div>
+
+      <div class="flex items-center justify-between">
+        <div class="text-zinc-400">Deadline risk</div>
+        <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
+          {% if deadline == 'high' %}border-rose-500/40 bg-rose-500/10 text-rose-200
+          {% elif deadline == 'medium' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+          {% elif deadline == 'low' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+          {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+          {{ state.deadline_risk }}
+        </span>
+      </div>
+
+      <div class="flex items-center justify-between">
+        <div class="text-zinc-400">Inventory risk</div>
+        <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
+          {% if inventory == 'high' %}border-rose-500/40 bg-rose-500/10 text-rose-200
+          {% elif inventory == 'medium' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+          {% elif inventory == 'low' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+          {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+          {{ state.inventory_risk }}
+        </span>
+      </div>
+
+      <div class="pt-2">
+        <div class="text-xs font-semibold text-zinc-300">Suggested next actions</div>
+        <ul class="mt-2 grid gap-2">
+          {% for a in state.suggested_next_actions or [] %}
+            <li class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-300">{{ a }}</li>
+          {% endfor %}
+          {% if (state.suggested_next_actions or [])|length == 0 %}
+            <li class="text-xs text-zinc-500">Add a few notes to see suggestions.</li>
+          {% endif %}
+        </ul>
+      </div>
+    </div>
+  {% else %}
+    <div class="mt-4 text-sm text-zinc-400">
+      Add a note to wake the watchers.
+    </div>
+  {% endif %}
+
+  <div class="mt-5 border-t border-zinc-800/80 pt-4">
+    <div class="text-xs font-semibold text-zinc-300">Watchers</div>
+    <div class="mt-2 grid gap-2">
+      {% for e in events %}
+        <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-400">
+          <span class="font-semibold text-zinc-300">{{ e.agent or "System" }}</span>
+          <span class="text-zinc-500">· {{ e.created_at }}</span>
+          <div class="mt-1">{{ e.message or e.type }}</div>
+        </div>
+      {% endfor %}
+      {% if events|length == 0 %}
+        <div class="text-xs text-zinc-500">No watcher events yet.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
