@@ -8,6 +8,7 @@
 3. Configure env: `cp docs/env.example .env` (or `cp .env.example .env`) and set `MONGODB_URI` (plus optional `OPENAI_API_KEY`)
    - Atlas note: add your current IP under **Project → Database & Network Access** or the app won’t connect.
    - Create a DB user under **Project → Database Access** and use those credentials in the URI.
+   - Use the Atlas “Drivers” URI ending with `/` (this app selects the DB via `MONGODB_DB`; if you include a DB path, add `authSource=admin`).
    - Optional LLM: set `COUNCIL_MODE=openai` + `OPENAI_API_KEY` + `OPENAI_MODEL=gpt-5.2`
 4. Run: `PYTHONPYCACHEPREFIX=.pycache uvicorn server.main:app --reload` (helps on macOS if you hit `PermissionError` writing caches)
 5. Open: `http://127.0.0.1:8000`

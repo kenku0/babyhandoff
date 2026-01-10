@@ -107,6 +107,14 @@ MONGODB_DB=babyhandoff</code></pre>
         <code class="text-zinc-300">MONGODB_DB</code>). URL-encode password chars (e.g. <code class="text-zinc-300">@</code> →
         <code class="text-zinc-300">%40</code>).
       </div>
+      <div class="mt-3 rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-4 py-3 text-xs text-zinc-300">
+        <div class="text-zinc-500">Quick URL-encode helper</div>
+        <pre class="mt-2 overflow-x-auto text-[11px] text-zinc-300"><code>python3 -c "import urllib.parse; print(urllib.parse.quote_plus('YOUR_PASSWORD'))"</code></pre>
+        <div class="mt-2 text-zinc-500">
+          If your URI includes a database path (e.g. <code class="text-zinc-300">...mongodb.net/babyhandoff</code>), add
+          <code class="text-zinc-300">authSource=admin</code> or switch to the “Drivers” URI that ends with <code class="text-zinc-300">/</code>.
+        </div>
+      </div>
     </div>
 
     <div class="mt-6 text-xs text-zinc-500">

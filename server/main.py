@@ -874,6 +874,21 @@ async def run_view(request: Request, shift_id: str, run_id: str):
     tasks = await TasksRepo(mongo.db).list_for_run(run_id)
     proposals = await ProposalsRepo(mongo.db).list_for_run(run_id)
     decision = await DecisionsRepo(mongo.db).get_for_run(run_id)
+    # For demo UX: compare against the previous run (if any) to show "winner changed" + nav.
+    runs_repo = RunsRepo(mongo.db)
+    shift_runs = await runs_repo.list_for_shift(shift_id, limit=20)
+    prev_run = None
+    next_run = None
+    prev_decision = None
+    for i, r in enumerate(shift_runs):
+        if r.get("_id") == run_id:
+            if i + 1 < len(shift_runs):
+                prev_run = shift_runs[i + 1]
+            if i - 1 >= 0:
+                next_run = shift_runs[i - 1]
+            break
+    if prev_run:
+        prev_decision = await DecisionsRepo(mongo.db).get_for_run(str(prev_run.get("_id")))
     context_pack = await ContextPacksRepo(mongo.db).get_for_run(run_id)
     context_pack_html = render_markdown_safe(context_pack.get("compiled_text", "")) if context_pack else ""
     artifact = await ArtifactsRepo(mongo.db).get_for_run(run_id, kind="handoff_markdown")
@@ -906,6 +921,9 @@ async def run_view(request: Request, shift_id: str, run_id: str):
             "tasks": tasks,
             "proposals": proposals,
             "decision": decision,
+            "prev_run": prev_run,
+            "next_run": next_run,
+            "prev_decision": prev_decision,
             "context_pack": context_pack,
             "context_pack_html": context_pack_html,
             "artifact": artifact,

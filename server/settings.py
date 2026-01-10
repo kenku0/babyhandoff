@@ -14,6 +14,10 @@ class Settings:
     council_mode: str
     openai_api_key: str | None
     openai_model: str
+    anthropic_api_key: str | None
+    anthropic_model: str
+    gemini_api_key: str | None
+    gemini_model: str
     agent_timeout_seconds: float
     agent_max_retries: int
     context_pack_token_budget: int
@@ -52,6 +56,10 @@ def load_settings() -> Settings:
         council_mode=os.getenv("COUNCIL_MODE", "heuristic").strip().lower(),
         openai_api_key=os.getenv("OPENAI_API_KEY") or None,
         openai_model=os.getenv("OPENAI_MODEL", "gpt-5.2"),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY") or None,
+        anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
+        gemini_api_key=os.getenv("GEMINI_API_KEY") or None,
+        gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-pro"),
         agent_timeout_seconds=_parse_float(os.getenv("AGENT_TIMEOUT_SECONDS"), default=25.0),
         agent_max_retries=_parse_int(os.getenv("AGENT_MAX_RETRIES"), default=2),
         context_pack_token_budget=_parse_int(os.getenv("CONTEXT_PACK_TOKEN_BUDGET"), default=4000),

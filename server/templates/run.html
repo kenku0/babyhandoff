@@ -1,6 +1,20 @@
 {% extends "base.html" %}
 {% block content %}
   {% set run_status = (run.status or "")|lower %}
+  {% set sel = ((decision.selected_archetype or "")|lower) if decision else "" %}
+  {% set selected_planner_task = ("plan_" ~ sel) if sel else "" %}
+  {% set accent_badge = "border-indigo-500/40 bg-indigo-500/10 text-indigo-200" %}
+  {% set accent_ring = "ring-indigo-500/25" %}
+  {% set accent_row_bg = "bg-indigo-500/5" %}
+  {% if sel == "errands_first" %}
+    {% set accent_badge = "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200" %}
+    {% set accent_ring = "ring-fuchsia-500/25" %}
+    {% set accent_row_bg = "bg-fuchsia-500/5" %}
+  {% elif sel == "admin_first" %}
+    {% set accent_badge = "border-amber-500/40 bg-amber-500/10 text-amber-200" %}
+    {% set accent_ring = "ring-amber-500/25" %}
+    {% set accent_row_bg = "bg-amber-500/5" %}
+  {% endif %}
   <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
@@ -19,16 +33,53 @@
             <span class="text-zinc-500">Auto-refreshing…</span>
           {% endif %}
         </div>
+        <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+          {% if prev_run %}
+            <a class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 hover:border-zinc-700/80" href="/shifts/{{ shift_id }}/runs/{{ prev_run['_id'] }}">
+              ← prev run
+            </a>
+          {% endif %}
+          {% if next_run %}
+            <a class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 hover:border-zinc-700/80" href="/shifts/{{ shift_id }}/runs/{{ next_run['_id'] }}">
+              next run →
+            </a>
+          {% endif %}
+          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1">
+            shareable: /shifts/{{ shift_id }}/runs/{{ run['_id'] }}
+          </span>
+        </div>
       </div>
       <div class="flex flex-wrap gap-2">
         <a href="/shifts/{{ shift_id }}" class="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 px-4 py-2 text-sm font-semibold text-zinc-300 hover:border-zinc-700/80">
           Back to shift
         </a>
+        <button
+          id="copy-link"
+          class="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-zinc-700/80"
+        >
+          Copy link
+        </button>
+        <button
+          id="copy-handoff"
+          data-url="/shifts/{{ shift_id }}/runs/{{ run['_id'] }}/handoff.md"
+          class="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-zinc-700/80 disabled:opacity-50"
+          {% if not artifact %}disabled{% endif %}
+        >
+          Copy handoff
+        </button>
         {% if council_artifact or live_council_count %}
           <a href="/shifts/{{ shift_id }}/runs/{{ run['_id'] }}/council.md" class="rounded-2xl border border-zinc-700/80 bg-zinc-950/50 px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-zinc-600/80">
             Download council.md
           </a>
         {% endif %}
+        <button
+          id="copy-council"
+          data-url="/shifts/{{ shift_id }}/runs/{{ run['_id'] }}/council.md"
+          class="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-zinc-700/80 disabled:opacity-50"
+          {% if not (council_artifact or live_council_count) %}disabled{% endif %}
+        >
+          Copy council
+        </button>
         {% if artifact %}
           <a href="/shifts/{{ shift_id }}/runs/{{ run['_id'] }}/handoff.md" class="rounded-2xl bg-gradient-to-br from-zinc-100 to-white px-4 py-2 text-sm font-semibold text-zinc-950 shadow hover:from-white hover:to-white">
             Download handoff.md
@@ -66,24 +117,62 @@
   </div>
 
   {% if decision %}
-    {% set sel = (decision.selected_archetype or "")|lower %}
     <div class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div class="text-xs font-semibold text-zinc-400">Selected plan</div>
           <div class="mt-2 flex flex-wrap items-center gap-2">
             <div class="text-2xl font-semibold tracking-tight">{{ decision.selected_archetype.replace("_", "-") }}</div>
-            <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
-              {% if sel == 'sleep_first' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
-              {% elif sel == 'errands_first' %}border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200
-              {% elif sel == 'admin_first' %}border-amber-500/40 bg-amber-500/10 text-amber-200
-              {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+            <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold {{ accent_badge }}">
               Decision Card
             </span>
           </div>
           <div class="mt-3 max-w-3xl text-sm text-zinc-300">{{ decision.summary }}</div>
         </div>
       </div>
+
+      {% if prev_decision and prev_decision.selected_archetype and prev_decision.selected_archetype != decision.selected_archetype %}
+        <div class="mt-5 rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="text-sm font-semibold">Winner changed</div>
+            <span class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2.5 py-1 text-[11px] text-zinc-400">re-run</span>
+          </div>
+          <div class="mt-2 text-sm text-zinc-300">
+            {{ prev_decision.selected_archetype.replace("_","-") }} → <span class="font-semibold">{{ decision.selected_archetype.replace("_","-") }}</span>
+          </div>
+          <div class="mt-1 text-xs text-zinc-500">
+            Re-runs persist a new version and show a v1→v2 diff in the handoff.
+          </div>
+        </div>
+      {% endif %}
+
+      {% set ns = namespace(selected=None) %}
+      {% for p in proposals %}
+        {% if p.archetype == decision.selected_archetype %}
+          {% set ns.selected = p %}
+        {% endif %}
+      {% endfor %}
+
+      {% if ns.selected %}
+        <div class="mt-5 grid grid-cols-1 gap-4 border-t border-zinc-800/80 pt-5 lg:grid-cols-2">
+          <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+            <div class="text-xs font-semibold text-zinc-400">Next 12h (blocks)</div>
+            <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-zinc-200">
+              {% for b in ns.selected.plan_blocks %}
+                <li>{{ b }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+            <div class="text-xs font-semibold text-zinc-400">Top priorities</div>
+            <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-zinc-200">
+              {% for p in (ns.selected.top_priorities or [])[:5] %}
+                <li>{{ p }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+      {% endif %}
     </div>
   {% endif %}
 
@@ -115,12 +204,29 @@
       <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
         <div class="flex items-center justify-between">
           <div class="text-sm font-semibold">Run Tasks</div>
-          <div class="text-xs text-zinc-500">delegation log</div>
+          {% set c = namespace(total=0, done=0, failed=0, running=0) %}
+          {% for t in tasks %}
+            {% set c.total = c.total + 1 %}
+            {% set st = (t.status or "")|lower %}
+            {% if st == "completed" %}{% set c.done = c.done + 1 %}{% endif %}
+            {% if st == "failed" %}{% set c.failed = c.failed + 1 %}{% endif %}
+            {% if st == "running" %}{% set c.running = c.running + 1 %}{% endif %}
+          {% endfor %}
+          <div class="text-xs text-zinc-500">
+            {{ c.done }}/{{ c.total }} done{% if c.failed %} · {{ c.failed }} failed{% endif %}{% if c.running %} · running{% endif %}
+          </div>
+        </div>
+        {% set progress = ((c.done + c.failed) * 100 / c.total) if c.total else 0 %}
+        <div class="mt-3 h-2 overflow-hidden rounded-full border border-zinc-800/80 bg-zinc-950/40">
+          <div
+            class="h-full {% if c.failed %}bg-rose-500/40{% else %}bg-emerald-500/35{% endif %}"
+            style="width: {{ progress }}%"
+          ></div>
         </div>
         <div class="mt-4 grid gap-2">
           {% for t in tasks %}
             {% set status = (t.status or "")|lower %}
-            <div class="flex items-center justify-between rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-4 py-3 text-xs">
+            <div class="flex items-center justify-between rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-4 py-3 text-xs {% if selected_planner_task and t.name == selected_planner_task %}ring-1 {{ accent_ring }}{% endif %}">
               <div>
                 <div class="font-semibold text-zinc-200">{{ t.name }}</div>
                 <div class="text-zinc-500">{{ t.agent_name }}</div>
@@ -176,7 +282,7 @@
                 </thead>
                 <tbody>
                   {% for key, scores in decision.scores.items() %}
-                    <tr class="border-t border-zinc-800/80 {% if key == decision.selected_archetype %}bg-indigo-500/5{% endif %}">
+                    <tr class="border-t border-zinc-800/80 {% if key == decision.selected_archetype %}{{ accent_row_bg }}{% endif %}">
                       <td class="px-3 py-2 font-semibold text-zinc-200">{{ key.replace("_", "-") }}</td>
                       <td class="px-3 py-2 text-zinc-300">{{ scores._total.score }}</td>
                       <td class="px-3 py-2 text-zinc-300">{{ scores.deadline_risk.score }}</td>
@@ -203,7 +309,11 @@
                       {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
                       {{ (e.type or "note")|upper }}
                     </span>
-                    <span class="text-[11px] text-zinc-500">linked</span>
+                    {% if e.log_id %}
+                      <a class="text-[11px] text-indigo-300 hover:text-indigo-200" href="/shifts/{{ shift_id }}#log-{{ e.log_id }}">view in shift</a>
+                    {% else %}
+                      <span class="text-[11px] text-zinc-500">linked</span>
+                    {% endif %}
                   </div>
                   <div class="mt-2">{{ e.text }}</div>
                 </div>
@@ -229,13 +339,13 @@
         </div>
         <div class="mt-4 grid gap-3">
           {% for p in proposals %}
-            <details class="group rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] {% if decision and p.archetype == decision.selected_archetype %}ring-1 ring-indigo-500/25{% endif %}" {% if decision and p.archetype == decision.selected_archetype %}open{% endif %}>
+            <details class="group rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] {% if decision and p.archetype == decision.selected_archetype %}ring-1 {{ accent_ring }}{% endif %}" {% if decision and p.archetype == decision.selected_archetype %}open{% endif %}>
               <summary class="flex cursor-pointer list-none items-center justify-between gap-4">
                 <div class="min-w-0">
                   <div class="flex flex-wrap items-center gap-2">
                     <div class="text-sm font-semibold">{{ p.title }}</div>
                     {% if decision and p.archetype == decision.selected_archetype %}
-                      <span class="rounded-full border border-indigo-500/40 bg-indigo-500/10 px-2.5 py-1 text-[11px] font-semibold text-indigo-200">
+                      <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold {{ accent_badge }}">
                         Selected
                       </span>
                     {% endif %}
@@ -344,6 +454,71 @@
 
 {% block scripts %}
   {% set run_status = (run.status or "")|lower %}
+  <script>
+    (function () {
+      async function copyFromUrl(btn) {
+        const url = btn.getAttribute("data-url");
+        if (!url) return;
+        const prev = btn.textContent;
+        btn.textContent = "Copying…";
+        btn.disabled = true;
+        try {
+          const res = await fetch(url, { cache: "no-store" });
+          const txt = await res.text();
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(txt);
+          } else {
+            const el = document.createElement("textarea");
+            el.value = txt;
+            el.style.position = "fixed";
+            el.style.left = "-9999px";
+            document.body.appendChild(el);
+            el.focus();
+            el.select();
+            document.execCommand("copy");
+            document.body.removeChild(el);
+          }
+          btn.textContent = "Copied";
+          window.setTimeout(() => (btn.textContent = prev), 900);
+        } catch (e) {
+          btn.textContent = "Copy failed";
+          window.setTimeout(() => (btn.textContent = prev), 1200);
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      const handoffBtn = document.getElementById("copy-handoff");
+      if (handoffBtn) handoffBtn.addEventListener("click", () => copyFromUrl(handoffBtn));
+      const councilBtn = document.getElementById("copy-council");
+      if (councilBtn) councilBtn.addEventListener("click", () => copyFromUrl(councilBtn));
+      const linkBtn = document.getElementById("copy-link");
+      if (linkBtn) {
+        linkBtn.addEventListener("click", async () => {
+          const prev = linkBtn.textContent;
+          linkBtn.textContent = "Copied";
+          try {
+            const href = window.location.href;
+            if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(href);
+            else {
+              const el = document.createElement("textarea");
+              el.value = href;
+              el.style.position = "fixed";
+              el.style.left = "-9999px";
+              document.body.appendChild(el);
+              el.focus();
+              el.select();
+              document.execCommand("copy");
+              document.body.removeChild(el);
+            }
+          } catch (e) {
+            linkBtn.textContent = "Copy failed";
+          }
+          window.setTimeout(() => (linkBtn.textContent = prev), 900);
+        });
+      }
+    })();
+  </script>
   {% if run_status == "running" %}
     <script>
       (function () {
