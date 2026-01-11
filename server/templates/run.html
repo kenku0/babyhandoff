@@ -41,10 +41,6 @@
               next run →
             </a>
           {% endif %}
-          <span class="hidden text-zinc-600 lg:inline">Jump:</span>
-          <a class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 hover:border-zinc-700/80" href="#decision-card">Decision</a>
-          <a class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 hover:border-zinc-700/80" href="#handoff">Handoff</a>
-          <a class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 hover:border-zinc-700/80" href="#village-activity">Activity</a>
         </div>
       </div>
 
@@ -107,29 +103,6 @@
       </div>
     </div>
 
-    <div id="what-if" class="mt-5 border-t border-zinc-800/80 pt-4">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="text-sm font-semibold">What-if re-run</div>
-        <form action="/shifts/{{ shift_id }}/runs" method="post" class="flex flex-wrap items-center gap-2">
-          <div class="text-xs text-zinc-500">Energy</div>
-          {% set energy_selected = (run.energy_override or "")|lower %}
-          {% for (value, label) in [("","Auto"),("high","High"),("medium","Medium"),("low","Low")] %}
-            <label class="cursor-pointer">
-              <input class="peer sr-only" type="radio" name="energy" value="{{ value }}" {% if value == energy_selected %}checked{% endif %} />
-              <span class="inline-flex items-center rounded-full border border-zinc-800/80 bg-zinc-950/40 px-3 py-1 text-xs text-zinc-300 transition peer-checked:border-indigo-500/40 peer-checked:bg-indigo-500/10 peer-checked:text-indigo-200 hover:border-zinc-700/80">
-                {{ label }}
-              </span>
-            </label>
-          {% endfor %}
-          <button class="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-700/80">
-            Re-run council
-          </button>
-        </form>
-      </div>
-      <div class="mt-2 text-xs text-zinc-500">
-        Creates a new run and shows a v1→v2 diff in the handoff card.
-      </div>
-    </div>
   </div>
 
   {% include "fragments/run_main.html" %}
@@ -177,8 +150,12 @@
         closeExportMenu();
       }
 
-      document.querySelectorAll("button[data-url]").forEach((btn) => {
-        btn.addEventListener("click", () => copyFromUrl(btn));
+      document.addEventListener("click", (e) => {
+        const btn = e.target && e.target.closest ? e.target.closest("button[data-url]") : null;
+        if (!btn) return;
+        if (btn.disabled) return;
+        e.preventDefault();
+        copyFromUrl(btn);
       });
       const linkBtn = document.getElementById("copy-link");
       if (linkBtn) {
@@ -213,6 +190,95 @@
         if (details.contains(e.target)) return;
         details.open = false;
       });
+
+      function applyRunTabs(root) {
+        const container = (root || document).getElementById("run-main");
+        if (!container) return;
+        const buttons = Array.from(container.querySelectorAll("[data-tab]"));
+        const panels = Array.from(container.querySelectorAll("[data-tab-panel]"));
+        if (!buttons.length || !panels.length) return;
+
+        const defaultTab = container.getAttribute("data-default-tab") || "handoff";
+        const stored = window.localStorage ? localStorage.getItem("babyhandoff.runTab") : null;
+        let active = stored || defaultTab;
+        if (!panels.some((p) => p.getAttribute("data-tab-panel") === active)) active = defaultTab;
+
+        for (const panel of panels) {
+          const name = panel.getAttribute("data-tab-panel");
+          panel.classList.toggle("hidden", name !== active);
+        }
+        for (const btn of buttons) {
+          const name = btn.getAttribute("data-tab");
+          const on = name === active;
+          btn.setAttribute("aria-selected", on ? "true" : "false");
+          btn.setAttribute("tabindex", on ? "0" : "-1");
+          btn.classList.toggle("border-zinc-700/80", on);
+          btn.classList.toggle("bg-zinc-950/70", on);
+          btn.classList.toggle("text-zinc-100", on);
+          btn.classList.toggle("text-zinc-300", !on);
+        }
+      }
+
+      document.addEventListener("click", (e) => {
+        const btn = e.target && e.target.closest ? e.target.closest("[data-tab]") : null;
+        if (!btn) return;
+        const container = btn.closest("#run-main");
+        if (!container) return;
+        const name = btn.getAttribute("data-tab");
+        if (!name) return;
+        if (window.localStorage) localStorage.setItem("babyhandoff.runTab", name);
+        applyRunTabs(document);
+      });
+
+      document.addEventListener("keydown", (e) => {
+        const activeTab = e.target && e.target.closest ? e.target.closest("[data-tab][role='tab']") : null;
+        if (!activeTab) return;
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+        const container = activeTab.closest("#run-main");
+        if (!container) return;
+
+        const tabs = Array.from(container.querySelectorAll("[data-tab][role='tab']"));
+        if (!tabs.length) return;
+        const idx = Math.max(0, tabs.indexOf(activeTab));
+        let nextIdx = idx;
+        if (e.key === "ArrowLeft") nextIdx = (idx - 1 + tabs.length) % tabs.length;
+        if (e.key === "ArrowRight") nextIdx = (idx + 1) % tabs.length;
+        if (e.key === "Home") nextIdx = 0;
+        if (e.key === "End") nextIdx = tabs.length - 1;
+        const nextTab = tabs[nextIdx];
+        if (!nextTab) return;
+        e.preventDefault();
+        nextTab.focus();
+        const name = nextTab.getAttribute("data-tab");
+        if (window.localStorage) localStorage.setItem("babyhandoff.runTab", name);
+        applyRunTabs(document);
+      });
+
+      applyRunTabs(document);
+      document.body.addEventListener("htmx:afterSwap", (e) => applyRunTabs(e.target));
+
+      function maybeSwitchTabForHash(hash) {
+        if (!hash || !hash.startsWith("#")) return;
+        const id = hash.slice(1);
+        if (!id) return;
+        const el = document.getElementById(id);
+        if (!el) return;
+        const panel = el.closest("[data-tab-panel]");
+        if (!panel) return;
+        const tab = panel.getAttribute("data-tab-panel");
+        if (!tab) return;
+        if (window.localStorage) localStorage.setItem("babyhandoff.runTab", tab);
+        applyRunTabs(document);
+      }
+
+      document.addEventListener("click", (e) => {
+        const a = e.target && e.target.closest ? e.target.closest("a[href^='#']") : null;
+        if (!a) return;
+        maybeSwitchTabForHash(a.getAttribute("href"));
+      });
+
+      window.addEventListener("hashchange", () => maybeSwitchTabForHash(window.location.hash));
+      maybeSwitchTabForHash(window.location.hash);
     })();
   </script>
 {% endblock %}

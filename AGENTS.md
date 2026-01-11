@@ -60,7 +60,7 @@ Primary: one solo operator (one caregiver juggling work/school + home). Sharing 
 ## MVP User Flow
 1. User starts/opens a shift and adds messy notes (text; optional voice-to-text fills the same input).
 2. User clicks **Generate Plan (next 12h)**.
-3. Agents propose 3 plans: **Sleep-first**, **Errands-first**, **Admin-first**.
+3. Agents propose 3 plans: **Stability-first (sleep-first)**, **Errands-first**, **Admin-first**.
 4. Referee scores plans against a rubric; Coordinator auto-selects and materializes tasks.
 5. UI shows: selected plan + rationale with evidence links; other plans are viewable.
 6. User exports a Markdown handoff for Obsidian (`.md`) and/or shares it.
@@ -101,7 +101,7 @@ Shows:
 - Evidence-linked rationale (“because of” links to specific notes/logs).
 
 ### Plan Archetypes
-- **Sleep-first**: protect rest windows, reduce workload, add buffers, defer non-urgent errands.
+- **Stability-first (sleep-first)**: protect recovery windows, reduce workload, add buffers, defer non-urgent errands.
 - **Errands-first**: batch outside tasks, optimize by time windows and dependencies, minimize trips.
 - **Admin-first**: handle deadlines/forms/scheduling/school/work logistics; keep other tasks minimal.
 

@@ -161,10 +161,9 @@ async def seed_demo_month(
 
         last_log_at = log_base
         shift_id = await shifts_repo.create_shift(
-            title=tpl.title,
             created_at=created_at,
             updated_at=created_at,
-            extra={"demo": True},
+            extra={"demo": True, "demo_scenario": tpl.title},
         )
         for j, (t, txt) in enumerate(selected_logs):
             last_log_at = log_base + timedelta(minutes=j * log_spacing)
@@ -178,4 +177,3 @@ async def seed_demo_month(
         created_shift_ids.append(shift_id)
 
     return created_shift_ids
-

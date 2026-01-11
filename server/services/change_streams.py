@@ -55,6 +55,7 @@ class ChangeStreamWorker:
                                     "energy_inferred": radar.energy_inferred,
                                     "deadline_risk": radar.deadline_risk,
                                     "inventory_risk": radar.inventory_risk,
+                                    "focus_pressure": radar.focus_pressure,
                                     "suggested_next_actions": radar.suggested_next_actions,
                                 },
                             )

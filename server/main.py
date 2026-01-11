@@ -67,6 +67,7 @@ async def _recompute_shift_state(
             "energy_inferred": radar.energy_inferred,
             "deadline_risk": radar.deadline_risk,
             "inventory_risk": radar.inventory_risk,
+            "focus_pressure": radar.focus_pressure,
             "suggested_next_actions": radar.suggested_next_actions,
         },
     )
@@ -287,6 +288,10 @@ async def home(request: Request):
             continue
         s["log_count"] = await logs_col.count_documents({"shift_id": sid})
         s["run_count"] = await runs_col.count_documents({"shift_id": sid})
+        last_log = await logs_col.find_one({"shift_id": sid}, sort=[("created_at", -1)])
+        if last_log:
+            s["last_log_type"] = str(last_log.get("type") or "note")
+            s["last_log_text"] = str(last_log.get("text") or "").strip()
         last_run = await runs_col.find_one({"shift_id": sid}, sort=[("created_at", -1)])
         if last_run:
             s["last_run_status"] = str(last_run.get("status") or "").lower()
@@ -309,7 +314,7 @@ async def demo_shift(request: Request):
     logs_repo = LogsRepo(mongo.db)
     shifts_repo = ShiftsRepo(mongo.db)
 
-    shift_id = await shifts_repo.create_shift(title="Demo shift — Tonight handoff", extra={"demo": True})
+    shift_id = await shifts_repo.create_shift(extra={"demo": True, "demo_scenario": "sample_shift"})
     for t, txt in SAMPLE_SHIFT_LOGS:
         await logs_repo.add(shift_id, t, txt)
     await shifts_repo.touch(shift_id)
@@ -1257,9 +1262,12 @@ async def add_log(
         return RedirectResponse(url=f"/shifts/{shift_id}", status_code=303)
 
     logs_repo = LogsRepo(mongo.db)
+    shifts_repo = ShiftsRepo(mongo.db)
     allowed = {"note", "task", "deadline", "inventory"}
+    inserted: list[tuple[str, str]] = []
     if log_type and log_type in allowed:
         await logs_repo.add(shift_id, log_type, raw, tags=[log_type])
+        inserted.append((log_type, raw))
     else:
         items: list[dict] = []
         if settings.openai_api_key:
@@ -1285,7 +1293,18 @@ async def add_log(
                 tags = ["note"]
             primary = tags[0]
             await logs_repo.add(shift_id, primary, it_text, tags=tags)
-    await ShiftsRepo(mongo.db).touch(shift_id)
+            inserted.append((primary, it_text))
+
+    # Auto-title shifts from the first high-signal entry, unless the user renamed it.
+    if inserted:
+        priority = {"deadline": 0, "inventory": 1, "task": 2, "note": 3}
+        inserted.sort(key=lambda x: priority.get(x[0], 9))
+        best_type, best_text = inserted[0]
+        try:
+            await shifts_repo.maybe_autotitle(shift_id, log_type=best_type, text=best_text)
+        except Exception:
+            pass
+    await shifts_repo.touch(shift_id)
     await _recompute_shift_state(
         mongo,
         shift_id=shift_id,
@@ -1423,6 +1442,16 @@ async def create_run(
 
 
 async def _build_run_template_data(mongo: Mongo, *, shift_id: str, run_id: str, run: dict) -> dict:
+    def _safe_md(value: object) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        try:
+            return str(value)
+        except Exception:
+            return ""
+
     shift = await ShiftsRepo(mongo.db).get(shift_id)
     tasks = await TasksRepo(mongo.db).list_for_run(run_id)
     proposals = await ProposalsRepo(mongo.db).list_for_run(run_id)
@@ -1444,13 +1473,13 @@ async def _build_run_template_data(mongo: Mongo, *, shift_id: str, run_id: str, 
         prev_decision = await DecisionsRepo(mongo.db).get_for_run(str(prev_run.get("_id")))
 
     context_pack = await ContextPacksRepo(mongo.db).get_for_run(run_id)
-    context_pack_html = render_markdown_safe(context_pack.get("compiled_text", "")) if context_pack else ""
+    context_pack_html = render_markdown_safe(_safe_md((context_pack or {}).get("compiled_text"))) if context_pack else ""
 
     artifact = await ArtifactsRepo(mongo.db).get_for_run(run_id, kind="handoff_markdown")
-    artifact_html = render_markdown_safe(artifact["markdown"]) if artifact else ""
+    artifact_html = render_markdown_safe(_safe_md((artifact or {}).get("markdown"))) if artifact else ""
 
     council_artifact = await ArtifactsRepo(mongo.db).get_for_run(run_id, kind="council_transcript_markdown")
-    council_html = render_markdown_safe(council_artifact["markdown"]) if council_artifact else ""
+    council_html = render_markdown_safe(_safe_md((council_artifact or {}).get("markdown"))) if council_artifact else ""
 
     run_events = [
         e
@@ -1510,6 +1539,69 @@ async def _build_run_template_data(mongo: Mongo, *, shift_id: str, run_id: str, 
             }
         )
 
+    def _format_message_time(m: dict) -> str | None:
+        dt = m.get("created_at")
+        try:
+            return dt.isoformat()
+        except Exception:
+            return None
+
+    def _truncate_lines(text: str, *, max_lines: int = 14, max_chars: int = 1800) -> str:
+        raw = (text or "").strip()
+        if not raw:
+            return ""
+        lines = raw.splitlines()
+        clipped = "\n".join(lines[:max_lines]).strip()
+        if len(clipped) > max_chars:
+            clipped = clipped[: max_chars - 1].rstrip() + "…"
+        if len(lines) > max_lines:
+            clipped = clipped.rstrip() + "\n…"
+        return clipped
+
+    council_dialogue: list[dict] = []
+    for m in run_messages:
+        meta = m.get("meta") or {}
+        kind = str(meta.get("kind") or "").strip()
+        if kind not in {"proposal", "roundtable_vote", "decision", "run_start", "handoff_written"}:
+            continue
+
+        sender = str(m.get("sender") or "System")
+        role = str(m.get("role") or "").strip()
+        archetype = str(meta.get("archetype") or "").strip()
+
+        provider = str(meta.get("provider") or "").strip()
+        model = str(meta.get("model") or "").strip()
+        judge_mode = str(meta.get("judge_mode") or "").strip()
+        judge_model = str(meta.get("judge_model") or "").strip()
+        vote = str(meta.get("vote") or "").strip()
+        agree = meta.get("agree")
+
+        if kind == "decision" and judge_mode:
+            provider = judge_mode
+            model = judge_model
+
+        content = str(m.get("content") or "").strip()
+        if kind == "run_start":
+            content = _truncate_lines(content, max_lines=10, max_chars=1200)
+        elif kind == "handoff_written":
+            content = _truncate_lines(content, max_lines=10, max_chars=800)
+
+        council_dialogue.append(
+            {
+                "kind": kind,
+                "sender": sender,
+                "role": role,
+                "archetype": archetype,
+                "provider": provider,
+                "model": model,
+                "vote": vote,
+                "agree": agree if agree is not None else None,
+                "created_at_iso": _format_message_time(m),
+                "content_html": render_markdown_safe(content) if content else "",
+                "content_raw": content,
+            }
+        )
+
     live_council_html = ""
     live_council_count = 0
     if not council_artifact:
@@ -1546,6 +1638,7 @@ async def _build_run_template_data(mongo: Mongo, *, shift_id: str, run_id: str, 
         "live_council_count": live_council_count,
         "roundtable_votes": roundtable_votes,
         "roundtable_cards": roundtable_cards,
+        "council_dialogue": council_dialogue,
         "events": run_events,
     }
 

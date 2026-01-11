@@ -4,7 +4,7 @@ import difflib
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from server.agents.risk_radar import infer_deadline_risk, infer_energy, infer_inventory_risk
+from server.agents.risk_radar import infer_deadline_risk, infer_energy, infer_focus_pressure, infer_inventory_risk
 
 
 Archetype = Literal["sleep_first", "errands_first", "admin_first"]
@@ -78,10 +78,16 @@ def _score_proposal(
     energy: EnergyLevel | None,
     deadline_risk: str,
     inventory_risk: str,
+    focus_pressure: str,
 ) -> dict[str, Any]:
     scores: dict[str, Any] = {}
 
-    scores["commitments_fit"] = {"score": 3, "why": "No calendar integration in MVP; assume neutral fit."}
+    # Commitments fit = "can we realistically protect a focus window if it exists?"
+    if focus_pressure in {"high", "medium"}:
+        c = 5 if archetype == "admin_first" else 3 if archetype == "sleep_first" else 2
+        scores["commitments_fit"] = {"score": c, "why": f"Focus pressure inferred as {focus_pressure}."}
+    else:
+        scores["commitments_fit"] = {"score": 3, "why": "No strong focus pressure detected; assume neutral fit."}
 
     if deadline_risk == "high":
         deadline = 5 if archetype == "admin_first" else 2 if archetype == "sleep_first" else 3
@@ -107,7 +113,9 @@ def _score_proposal(
     scores["time_window"] = {"score": time_window, "why": "Based on energy and archetype assumptions."}
 
     if inventory_risk in {"high", "medium"}:
-        inv = 5 if archetype == "errands_first" else 3
+        # When supplies are trending urgent, plans that leave the house (or explicitly cover supplies)
+        # should dominate; otherwise you risk an emergency trip later.
+        inv = 5 if archetype == "errands_first" else 2
     else:
         inv = 3
     scores["inventory_risk"] = {"score": inv, "why": f"Inventory risk inferred as {inventory_risk}."}
@@ -205,7 +213,14 @@ def _proposal_sleep_first(
     }
 
 
-def _proposal_errands_first(*, energy: EnergyLevel | None, inventory_risk: str) -> dict[str, Any]:
+def _proposal_errands_first(
+    *,
+    energy: EnergyLevel | None,
+    inventory_risk: str,
+    logs: list[dict] | None = None,
+) -> dict[str, Any]:
+    logs = logs or []
+    inventory_text = _first_log_text(logs, log_type="inventory")
     err_min, err_max = (45, 90)
     if inventory_risk in {"high", "medium"}:
         err_min, err_max = (45, 75)
@@ -223,11 +238,15 @@ def _proposal_errands_first(*, energy: EnergyLevel | None, inventory_risk: str) 
     ]
     if energy == "low":
         rationale.append("Energy is low; keep the loop to one stop if possible.")
-    start_here = [
-        "Pick ONE store/pickup (no browsing).",
-        "Write a 60‑second list: diapers/wipes/cream + protein + easy snacks.",
-        "Set a hard stop time before you leave.",
-    ]
+    start_here: list[str] = ["Pick ONE store/pickup (no browsing)."]
+    if inventory_text and inventory_risk != "none":
+        start_here.append(f"Supplies: “{inventory_text}” → add to cart/pickup list now (no browsing).")
+    start_here.extend(
+        [
+            "Write a 60‑second list: diapers/wipes/cream + protein + easy snacks.",
+            "Set a hard stop time before you leave.",
+        ]
+    )
     stop_rule = "Stop after the loop + drop-off. No extra aisles."
     wins = ["Essentials purchased", "Supply risk reduced", "Home reset started"]
     timeline = [
@@ -261,7 +280,15 @@ def _proposal_errands_first(*, energy: EnergyLevel | None, inventory_risk: str) 
     }
 
 
-def _proposal_admin_first(*, energy: EnergyLevel | None, deadline_risk: str, inventory_risk: str) -> dict[str, Any]:
+def _proposal_admin_first(
+    *,
+    energy: EnergyLevel | None,
+    deadline_risk: str,
+    inventory_risk: str,
+    logs: list[dict] | None = None,
+) -> dict[str, Any]:
+    logs = logs or []
+    deadline_text = _first_log_text(logs, log_type="deadline")
     blocks = ["Admin sprint (30–60 min) to clear deadlines", "Focus block (60–90 min)", "One essential task only"]
     if deadline_risk == "none":
         blocks[0] = "Admin sweep (20–30 min): schedule, email, quick forms"
@@ -274,11 +301,17 @@ def _proposal_admin_first(*, energy: EnergyLevel | None, deadline_risk: str, inv
     ]
     if inventory_risk in {"high", "medium"}:
         rationale.append("Supplies are trending low; include one essential pickup.")
-    start_here = [
-        "Open the nearest deadline/form/email thread.",
-        "Set a 25–30 min timer and do the first concrete step (draft/save/submit).",
-        "Write the 1 essential supply/food action you’ll do later (no more).",
-    ]
+    start_here: list[str] = []
+    if deadline_text and deadline_risk != "none":
+        start_here.append(f"Deadline: “{deadline_text}” → open it now and do the first concrete step (draft/save/submit).")
+    else:
+        start_here.append("Open the nearest deadline/form/email thread.")
+    start_here.extend(
+        [
+            "Set a 25–30 min timer and do the first concrete step (draft/save/submit).",
+            "Write the 1 essential supply/food action you’ll do later (no more).",
+        ]
+    )
     stop_rule = "Hard stop at 60 minutes total admin work; then either focus or rest."
     wins = ["Deadline anxiety reduced", "Focus protected", "Essentials covered"]
     focus_min, focus_max = (60, 90)
@@ -524,7 +557,7 @@ def decision_to_markdown(decision: dict[str, Any]) -> str:
     if summary:
         lines.append(summary)
         lines.append("")
-    lines.append("**Scores (total / commitments / deadline / energy / time / inventory)**")
+    lines.append("**Scores (total / commitments+focus / deadline / energy / time / inventory)**")
     scores = decision.get("scores") or {}
     for archetype, s in scores.items():
         try:
@@ -683,11 +716,12 @@ def run_council(
     energy = _normalize_energy(energy_override, logs)
     deadline_risk = infer_deadline_risk(logs)
     inventory_risk = infer_inventory_risk(logs)
+    focus_pressure = infer_focus_pressure(logs)
 
     base_proposals = [
         _proposal_sleep_first(energy=energy, deadline_risk=deadline_risk, inventory_risk=inventory_risk, logs=logs),
-        _proposal_errands_first(energy=energy, inventory_risk=inventory_risk),
-        _proposal_admin_first(energy=energy, deadline_risk=deadline_risk, inventory_risk=inventory_risk),
+        _proposal_errands_first(energy=energy, inventory_risk=inventory_risk, logs=logs),
+        _proposal_admin_first(energy=energy, deadline_risk=deadline_risk, inventory_risk=inventory_risk, logs=logs),
     ]
     proposals = (
         [merge_llm_proposal(p, proposal_overrides.get(p["archetype"])) for p in base_proposals]
@@ -699,7 +733,13 @@ def run_council(
     scored: list[tuple[int, int, int, int, dict[str, Any]]] = []
     for p in proposals:
         archetype: Archetype = p["archetype"]
-        scores = _score_proposal(archetype, energy=energy, deadline_risk=deadline_risk, inventory_risk=inventory_risk)
+        scores = _score_proposal(
+            archetype,
+            energy=energy,
+            deadline_risk=deadline_risk,
+            inventory_risk=inventory_risk,
+            focus_pressure=focus_pressure,
+        )
         score_map[archetype] = scores
         total = int(scores["_total"]["score"])
         dl = int(scores["deadline_risk"]["score"])
@@ -745,7 +785,7 @@ def run_council(
         "summary": " ".join(
             [
                 f"Selected {winner['title']} based on rubric scoring.",
-                f"Signals: energy {energy or 'unknown'} · deadline {deadline_risk} · inventory {inventory_risk}.",
+                f"Signals: energy {energy or 'unknown'} · focus {focus_pressure} · deadline {deadline_risk} · inventory {inventory_risk}.",
                 *reasons,
             ]
         ).strip(),

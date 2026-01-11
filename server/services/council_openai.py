@@ -21,7 +21,7 @@ def _logs_to_bullets(logs: list[dict], limit: int = 40) -> str:
 
 def _proposal_prompt(*, archetype: Archetype, logs: list[dict], energy: str | None) -> str:
     title_hint = {
-        "sleep_first": "Stabilize-first (minimum viable shift)",
+        "sleep_first": "Stability-first (minimum viable shift)",
         "errands_first": "Errands-first (batch + reduce supply risk)",
         "admin_first": "Admin-first (deadlines + logistics)",
     }.get(archetype, "")

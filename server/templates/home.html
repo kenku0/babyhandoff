@@ -3,58 +3,61 @@
   <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_10px_30px_-20px_rgba(0,0,0,0.8)]">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-semibold tracking-tight">Shifts</h1>
+        <h1 class="text-2xl font-semibold tracking-tight">Start a shift</h1>
         <p class="mt-1 text-sm text-zinc-400">
-          Capture messy notes. Get a rubric-scored Decision Card + a clean handoff.
+          Capture messy notes during the day. When it’s handoff time, the village generates a Decision Card + clean export.
         </p>
         <div class="mt-4 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
           <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">
-            <span class="text-zinc-500">1</span> New shift
+            <span class="text-zinc-500">1</span> Add notes
           </span>
           <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">
-            <span class="text-zinc-500">2</span> Add notes
+            <span class="text-zinc-500">2</span> Generate plan
           </span>
           <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">
-            <span class="text-zinc-500">3</span> Generate plan
+            <span class="text-zinc-500">3</span> Export handoff
           </span>
-          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/50 px-2.5 py-1">
-            <span class="text-zinc-500">4</span> Export
-          </span>
-        </div>
-        <div class="mt-3 text-xs text-zinc-500">
-          Outputs: <span class="text-zinc-300">12h plan</span> · <span class="text-zinc-300">24h outlook</span> · <span class="text-zinc-300">evidence links</span> · <span class="text-zinc-300">Markdown export</span>
         </div>
       </div>
-      <div class="flex flex-wrap gap-2">
-        {% if settings and settings.demo_mode %}
-          <form action="/demo/reset" method="post" onsubmit="return confirm('Reset demo data? This deletes all shifts/runs/logs and re-seeds the last 30 days.');">
-            <button
-              class="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-200 hover:bg-rose-500/15"
-              title="Deletes all shift data and reseeds a month of demo shifts"
-            >
-              Reset demo month
-            </button>
-          </form>
-        {% endif %}
-        <form action="/demo" method="post">
-          <button
-            class="rounded-2xl border border-indigo-500/40 bg-indigo-500/10 px-4 py-2 text-sm font-semibold text-indigo-200 hover:bg-indigo-500/15"
-          >
-            Demo shift
-          </button>
-        </form>
+
+      <div class="flex flex-col items-stretch gap-2">
         <form action="/shifts/new" method="post">
-          <button
-            class="rounded-2xl bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-950 shadow hover:bg-white"
-          >
+          <button class="w-full rounded-2xl bg-zinc-100 px-5 py-3 text-sm font-semibold text-zinc-950 shadow hover:bg-white">
             New shift
           </button>
         </form>
+
+        <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
+          <span>Tip: titles auto-update from your first entries.</span>
+          {% if settings and settings.demo_mode %}
+            <form
+              action="/demo/reset"
+              method="post"
+              onsubmit="return confirm('Reset demo data? This deletes all shifts/runs/logs and re-seeds the last 30 days.');"
+            >
+              <button
+                class="rounded-full border border-rose-500/40 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold text-rose-200 hover:bg-rose-500/15"
+                title="Deletes all shift data and reseeds a month of demo shifts"
+                type="submit"
+              >
+                Reset demo month
+              </button>
+            </form>
+          {% endif %}
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="mt-6 grid gap-3">
+  <div class="mt-8 flex items-center justify-between">
+    <div>
+      <div class="text-sm font-semibold text-zinc-200">Recent shifts</div>
+      <div class="mt-1 text-xs text-zinc-500">Most recent first.</div>
+    </div>
+    <div class="text-xs text-zinc-500">{{ shifts|length }} shown</div>
+  </div>
+
+  <div class="mt-4 grid gap-3">
     {% if shifts|length == 0 %}
       <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-6 text-sm text-zinc-400">
         <div class="font-semibold text-zinc-200">No shifts yet.</div>
@@ -69,7 +72,7 @@
         <div class="flex items-start justify-between gap-4">
           <a class="min-w-0 flex-1" href="/shifts/{{ s['_id'] }}">
             <div class="flex flex-wrap items-center gap-2">
-              <div class="truncate text-sm font-semibold text-zinc-100">
+              <div class="truncate text-base font-semibold text-zinc-100">
                 {{ s.title or "Untitled shift" }}
               </div>
               {% if s.last_run_status %}
@@ -82,6 +85,20 @@
                 </span>
               {% endif %}
             </div>
+
+            {% if s.last_log_text %}
+              {% set lt = (s.last_log_type or "note")|lower %}
+              <div class="mt-2 flex items-center gap-2 text-xs text-zinc-400">
+                <span class="rounded-full border px-2 py-0.5 text-[11px] font-semibold
+                  {% if lt == 'deadline' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                  {% elif lt == 'inventory' %}border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200
+                  {% elif lt == 'task' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
+                  {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+                  {{ lt|upper }}
+                </span>
+                <div class="truncate">{{ s.last_log_text }}</div>
+              </div>
+            {% endif %}
 
             <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500">
               <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5 text-[11px] text-zinc-400">

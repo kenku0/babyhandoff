@@ -15,6 +15,7 @@
     {% set energy = (state.energy_inferred or "")|lower %}
     {% set deadline = (state.deadline_risk or "")|lower %}
     {% set inventory = (state.inventory_risk or "")|lower %}
+    {% set focus = (state.focus_pressure or "")|lower %}
     <div class="mt-4 grid gap-3 text-sm">
       <div class="flex items-center justify-between">
         <div class="text-zinc-400">Energy (inferred)</div>
@@ -24,6 +25,17 @@
           {% elif energy == 'medium' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
           {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
           {{ state.energy_inferred or "—" }}
+        </span>
+      </div>
+
+      <div class="flex items-center justify-between">
+        <div class="text-zinc-400">Focus pressure</div>
+        <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
+          {% if focus == 'high' %}border-rose-500/40 bg-rose-500/10 text-rose-200
+          {% elif focus == 'medium' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+          {% elif focus == 'low' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+          {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+          {{ state.focus_pressure or "—" }}
         </span>
       </div>
 

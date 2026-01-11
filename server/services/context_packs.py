@@ -120,6 +120,7 @@ def build_context_pack(
     summary_lines = [
         f"Energy override: {energy_override or 'auto'}",
         f"Energy inferred: {radar.energy_inferred or 'unknown'}",
+        f"Focus pressure: {radar.focus_pressure}",
         f"Deadline risk: {radar.deadline_risk}",
         f"Inventory risk: {radar.inventory_risk}",
         f"Logs included: {len(picked)}/{len(logs)}",
@@ -135,6 +136,7 @@ def build_context_pack(
             "energy_inferred": radar.energy_inferred,
             "deadline_risk": radar.deadline_risk,
             "inventory_risk": radar.inventory_risk,
+            "focus_pressure": radar.focus_pressure,
             "suggested_next_actions": list(radar.suggested_next_actions or []),
         },
         "counts": {"logs_included": len(picked), "logs_total": len(logs)},

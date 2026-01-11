@@ -1,6 +1,7 @@
 {% set run_status = (run.status or "")|lower %}
 {% set sel = (decision.selected_archetype or "")|lower if decision else "" %}
 {% set selected_planner_task = ("plan_" ~ sel) if sel else "" %}
+{% set default_tab = "handoff" if artifact else "decision" %}
 {% set archetype_labels = {
   "sleep_first": "Stability-first",
   "errands_first": "Errands-first",
@@ -21,54 +22,54 @@
 
 <div
   id="run-main"
+  data-default-tab="{{ default_tab }}"
   {% if run_status == "running" %}
     hx-get="/shifts/{{ shift_id }}/runs/{{ run['_id'] }}/fragment/main"
     hx-trigger="every 1.2s"
     hx-swap="outerHTML"
   {% endif %}
 >
+  {% set ns = namespace(selected=None) %}
   {% if decision %}
-    <div class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-      {% set ns = namespace(selected=None) %}
-      {% for p in proposals %}
-        {% if p.archetype == decision.selected_archetype %}
-          {% set ns.selected = p %}
-        {% endif %}
-      {% endfor %}
-      {% set stask = namespace(t=None) %}
-      {% for t in tasks %}
-        {% if selected_planner_task and t.name == selected_planner_task %}
-          {% set stask.t = t %}
-        {% endif %}
-      {% endfor %}
-      {% set selected_title = (ns.selected.title if ns.selected and ns.selected.title else archetype_labels.get(decision.selected_archetype, decision.selected_archetype.replace("_", "-"))) %}
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div class="text-xs font-semibold text-zinc-400">Selected plan</div>
-          <div class="mt-2 flex flex-wrap items-center gap-2">
-            <div class="text-2xl font-semibold tracking-tight">{{ selected_title }}</div>
-            <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold {{ accent_badge }}">
-              Decision Card
-            </span>
-          </div>
-          <div class="mt-3 max-w-3xl text-sm text-zinc-300">{{ decision.summary }}</div>
-          {% if ns.selected and ns.selected.wins %}
-            <div class="mt-4 flex flex-wrap gap-2">
-              {% for w in (ns.selected.wins or [])[:5] %}
-                <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 text-[11px] font-semibold text-zinc-200">
-                  {{ w }}
-                </span>
-              {% endfor %}
-            </div>
-          {% endif %}
-          {% if stask.t and stask.t.outputs and stask.t.outputs.provider %}
-            <div class="mt-2 text-xs text-zinc-500">
-              source: {{ stask.t.outputs.provider }}{% if stask.t.outputs.model %} · {{ stask.t.outputs.model }}{% endif %}
-              {% if stask.t.outputs.provider_fallback %}<span class="text-zinc-600">· fallback</span>{% endif %}
-            </div>
-          {% endif %}
-        </div>
-      </div>
+    {% for p in proposals %}
+      {% if p.archetype == decision.selected_archetype %}
+        {% set ns.selected = p %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+
+  {% set stask = namespace(t=None) %}
+  {% for t in tasks %}
+    {% if selected_planner_task and t.name == selected_planner_task %}
+      {% set stask.t = t %}
+    {% endif %}
+  {% endfor %}
+
+	  {% if decision %}
+	    {% set selected_label = archetype_labels.get(decision.selected_archetype, decision.selected_archetype.replace("_", "-")) %}
+	    {% set selected_generated_title = (ns.selected.title if ns.selected and ns.selected.title else "") %}
+	    <div class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+	      <div class="flex flex-wrap items-start justify-between gap-4">
+	        <div class="max-w-3xl">
+	          <div class="text-xs font-semibold text-zinc-400">Winner</div>
+	          <div class="mt-2 flex flex-wrap items-center gap-2">
+	            <div class="text-2xl font-semibold tracking-tight">{{ selected_label }}</div>
+	            <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold {{ accent_badge }}">Decision Card</span>
+	          </div>
+	          {% if selected_generated_title and selected_generated_title != selected_label %}
+	            <div class="mt-1 text-xs text-zinc-500">plan name: {{ selected_generated_title }}</div>
+	          {% endif %}
+	          <div class="mt-3 text-sm text-zinc-300">{{ decision.summary }}</div>
+	          {% if stask.t and stask.t.outputs and stask.t.outputs.provider %}
+	            <div class="mt-2 text-xs text-zinc-500">
+	              source: {{ stask.t.outputs.provider }}{% if stask.t.outputs.model %} · {{ stask.t.outputs.model }}{% endif %}
+	              {% if stask.t.outputs.provider_fallback %}<span class="text-zinc-600">· fallback</span>{% endif %}
+	            </div>
+	          {% else %}
+	            <div class="mt-2 text-xs text-zinc-500">source: heuristic</div>
+	          {% endif %}
+	        </div>
+	      </div>
 
       {% if prev_decision and prev_decision.selected_archetype and prev_decision.selected_archetype != decision.selected_archetype %}
         <div class="mt-5 rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
@@ -88,804 +89,902 @@
       {% endif %}
 
       {% if ns.selected %}
-        <div class="mt-5 grid grid-cols-1 gap-4 border-t border-zinc-800/80 pt-5 lg:grid-cols-2">
+        {% set why = (ns.selected.rationale or ns.selected.wins or []) %}
+        <div class="mt-5 grid grid-cols-1 gap-4 border-t border-zinc-800/80 pt-5 lg:grid-cols-3">
+          <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] lg:col-span-2">
+            <div class="text-xs font-semibold text-zinc-400">Why this won</div>
+            {% if why and why|length %}
+              <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-zinc-200">
+                {% for w in why[:4] %}
+                  <li>{{ w }}</li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div class="mt-3 text-sm text-zinc-400">
+                Based on rubric scoring and evidence links from your notes.
+              </div>
+            {% endif %}
+          </div>
           <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
             <div class="flex items-center justify-between gap-3">
-              <div class="text-xs font-semibold text-zinc-400">Next 12h (blocks)</div>
+              <div class="text-xs font-semibold text-zinc-400">Next actions</div>
               {% if ns.selected.timeline_total_min and ns.selected.timeline_total_max %}
                 <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5 text-[11px] text-zinc-400">
                   ~{{ ns.selected.timeline_total_min }}–{{ ns.selected.timeline_total_max }}m
                 </span>
               {% endif %}
             </div>
-            {% if ns.selected.timeline %}
-              <div class="mt-4 space-y-3">
-                {% for it in (ns.selected.timeline or [])[:6] %}
-                  <div class="plan-timeline-item">
-                    <div class="plan-timeline-dot"></div>
-                    <div class="min-w-0">
-                      <div class="flex flex-wrap items-center gap-2">
-                        <div class="text-sm font-semibold text-zinc-200">{{ it.label }}</div>
-                        {% if it.min %}
-                          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5 text-[11px] text-zinc-300">
-                            {{ it.min }}{% if it.max and it.max != it.min %}–{{ it.max }}{% endif %}m
-                          </span>
-                        {% endif %}
-                      </div>
-                    </div>
-                  </div>
-                {% endfor %}
-              </div>
-            {% else %}
-              <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-zinc-200">
-                {% for b in (ns.selected.plan_blocks or []) %}
-                  <li>{{ b }}</li>
-                {% endfor %}
-                {% if (ns.selected.plan_blocks or [])|length == 0 %}
-                  <li class="text-zinc-500">No blocks recorded.</li>
-                {% endif %}
-              </ul>
-            {% endif %}
-          </div>
-          <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-            <div class="text-xs font-semibold text-zinc-400">Top priorities</div>
-            <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-zinc-200">
-              {% for p in (ns.selected.top_priorities or [])[:5] %}
-                <li>{{ p }}</li>
-              {% endfor %}
-              {% if (ns.selected.top_priorities or [])|length == 0 %}
-                <li class="text-zinc-500">No priorities recorded.</li>
-              {% endif %}
-            </ul>
-          </div>
-        </div>
-
-        {% if ns.selected.start_here or ns.selected.stop_rule %}
-          <div class="mt-4 rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 text-sm text-zinc-200 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-            {% if ns.selected.start_here %}
-              <div class="text-xs font-semibold text-zinc-400">Start here (next 10–15 min)</div>
-              <ul class="mt-2 list-disc space-y-1 pl-5">
-                {% for s in (ns.selected.start_here or [])[:5] %}
+            <ol class="mt-3 list-decimal space-y-1 pl-5 text-sm text-zinc-200">
+              {% if ns.selected.start_here %}
+                {% for s in (ns.selected.start_here or [])[:3] %}
                   <li>{{ s }}</li>
                 {% endfor %}
-              </ul>
-            {% endif %}
+              {% elif ns.selected.timeline %}
+                {% for it in (ns.selected.timeline or [])[:3] %}
+                  <li>{{ it.label }}</li>
+                {% endfor %}
+              {% elif ns.selected.plan_blocks %}
+                {% for b in (ns.selected.plan_blocks or [])[:3] %}
+                  <li>{{ b }}</li>
+                {% endfor %}
+              {% else %}
+                {% for p in (ns.selected.top_priorities or [])[:3] %}
+                  <li>{{ p }}</li>
+                {% endfor %}
+              {% endif %}
+              {% if (ns.selected.start_here or [])|length == 0 and (ns.selected.timeline or [])|length == 0 and (ns.selected.plan_blocks or [])|length == 0 and (ns.selected.top_priorities or [])|length == 0 %}
+                <li class="text-zinc-500">No actions recorded.</li>
+              {% endif %}
+            </ol>
             {% if ns.selected.stop_rule %}
-              <div class="mt-3 text-xs font-semibold text-zinc-400">Stop rule</div>
-              <div class="mt-1 text-sm text-zinc-300">{{ ns.selected.stop_rule }}</div>
+              <div class="mt-3 text-xs text-zinc-500">
+                <span class="font-semibold text-zinc-400">Stop rule:</span> {{ ns.selected.stop_rule }}
+              </div>
             {% endif %}
           </div>
-        {% endif %}
-        {% if ns.selected.if_then %}
-          <details class="mt-4 rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-            <summary class="cursor-pointer select-none text-sm font-semibold text-zinc-200 hover:text-zinc-100">
-              If/then replan cues
-              <span class="ml-2 text-xs font-normal text-zinc-500">(lightweight)</span>
-            </summary>
-            <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-zinc-300">
-              {% for it in (ns.selected.if_then or [])[:6] %}
-                <li>{{ it }}</li>
-              {% endfor %}
-            </ul>
-          </details>
-        {% endif %}
-
-        <div class="mt-4 rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] lg:hidden">
-          <div class="flex items-center justify-between gap-3">
-            <div class="text-sm font-semibold text-zinc-200">Handoff (final output)</div>
-            <a class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2.5 py-1 text-[11px] text-zinc-300 hover:border-zinc-700/80" href="#handoff">
-              Jump
-            </a>
-          </div>
-          {% if artifact %}
-            <div class="markdown mt-3 max-h-64 overflow-auto text-sm">
-              {{ artifact_html | safe }}
-            </div>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <a class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-700/80" href="/shifts/{{ shift_id }}/runs/{{ run['_id'] }}/handoff.md">
-                Download
-              </a>
-              <button class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-700/80" data-url="/shifts/{{ shift_id }}/runs/{{ run['_id'] }}/handoff.md?raw=1">
-                Copy
-              </button>
-            </div>
-          {% else %}
-            <div class="mt-3 text-sm text-zinc-500">
-              {% if run_status == 'running' %}Generating handoff…{% else %}Handoff unavailable{% endif %}
-            </div>
-          {% endif %}
         </div>
       {% endif %}
     </div>
   {% elif run_status == "running" %}
     <div class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-6 text-sm text-zinc-400 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-      Council is running… watch tasks/events update live.
+      Council is running… the village is drafting three plans and a referee is scoring them.
     </div>
   {% endif %}
 
-  <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <div class="space-y-6 lg:col-span-2">
-      {% if context_pack %}
-        <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-          <div class="flex items-center justify-between">
-            <div class="text-sm font-semibold">Context Pack</div>
-            <div class="flex flex-wrap items-center justify-end gap-2 text-[11px] text-zinc-400">
-              <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5">
-                budget {{ context_pack.token_budget }}
-              </span>
-              {% if context_pack.token_estimate %}
-                <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5">
-                  est {{ context_pack.token_estimate }}
-                </span>
-              {% endif %}
-              <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5">
-                logs {{ (context_pack.log_refs or [])|length }}
-              </span>
-            </div>
-          </div>
-
-          {% set radar = context_pack.radar if context_pack.radar is defined else None %}
-          {% set actions = (radar.suggested_next_actions if radar and radar.suggested_next_actions is defined else []) %}
-          {% set counts = context_pack.counts if context_pack.counts is defined else None %}
-
-          <div class="mt-4 grid gap-4 lg:grid-cols-2">
-            <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4">
-              <div class="text-xs font-semibold text-zinc-300">Signals</div>
-              <div class="mt-3 grid gap-2 text-xs">
-                <div class="flex items-center justify-between">
-                  <div class="text-zinc-500">Energy</div>
-                  <div class="flex items-center gap-2">
-                    <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5 text-[11px] text-zinc-300">
-                      override: {{ context_pack.energy_override or "auto" }}
-                    </span>
-                    {% if radar and radar.energy_inferred is defined %}
-                      <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5 text-[11px] text-zinc-300">
-                        inferred: {{ radar.energy_inferred or "unknown" }}
-                      </span>
-                    {% endif %}
-                  </div>
-                </div>
-                <div class="text-[11px] text-zinc-500">
-                  Change override via <a class="text-indigo-300 hover:text-indigo-200" href="#what-if">What-if re-run</a>.
-                </div>
-
-                <div class="flex items-center justify-between">
-                  <div class="text-zinc-500">Deadline risk</div>
-                  {% set dl = (radar.deadline_risk if radar and radar.deadline_risk is defined else "unknown") %}
-                  <span class="rounded-full border px-2 py-0.5 text-[11px]
-                    {% if dl in ['high'] %}border-rose-500/40 bg-rose-500/10 text-rose-200
-                    {% elif dl in ['medium'] %}border-amber-500/40 bg-amber-500/10 text-amber-200
-                    {% elif dl in ['low'] %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
-                    {% else %}border-zinc-800/80 bg-zinc-950/40 text-zinc-300{% endif %}">
-                    {{ dl }}
-                  </span>
-                </div>
-
-                <div class="flex items-center justify-between">
-                  <div class="text-zinc-500">Inventory risk</div>
-                  {% set inv = (radar.inventory_risk if radar and radar.inventory_risk is defined else "unknown") %}
-                  <span class="rounded-full border px-2 py-0.5 text-[11px]
-                    {% if inv in ['high'] %}border-rose-500/40 bg-rose-500/10 text-rose-200
-                    {% elif inv in ['medium'] %}border-amber-500/40 bg-amber-500/10 text-amber-200
-                    {% elif inv in ['low'] %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
-                    {% else %}border-zinc-800/80 bg-zinc-950/40 text-zinc-300{% endif %}">
-                    {{ inv }}
-                  </span>
-                </div>
-
-                <div class="flex items-center justify-between">
-                  <div class="text-zinc-500">Logs included</div>
-                  <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5 text-[11px] text-zinc-300">
-                    {% if counts and counts.logs_included is defined and counts.logs_total is defined %}
-                      {{ counts.logs_included }}/{{ counts.logs_total }}
-                    {% else %}
-                      {{ (context_pack.log_refs or [])|length }}
-                    {% endif %}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4">
-              <div class="text-xs font-semibold text-zinc-300">Suggested next actions</div>
-              <div class="mt-3 grid gap-2">
-                {% if actions and actions|length %}
-                  {% for a in actions[:5] %}
-                    <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/30 px-3 py-2 text-xs text-zinc-200">
-                      {{ a }}
-                    </div>
-                  {% endfor %}
-                {% else %}
-                  <div class="text-xs text-zinc-500">No suggested actions.</div>
-                {% endif %}
-              </div>
-            </div>
-          </div>
-
-          {% set normalized = context_pack.normalized if context_pack.normalized is defined else None %}
-          {% if normalized %}
-            <details class="mt-4 overflow-hidden rounded-3xl border border-zinc-800/80 bg-zinc-950/40">
-              <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-zinc-200 hover:bg-zinc-950/40">
-                Included notes
-                <span class="ml-2 text-xs font-normal text-zinc-500">
-                  ({{ (context_pack.log_refs or [])|length }})
-                </span>
-              </summary>
-              <div class="grid gap-3 px-4 pb-4 pt-2">
-                {% for (key, label, badge) in [
-                  ("deadlines","Deadlines","border-amber-500/40 bg-amber-500/10 text-amber-200"),
-                  ("inventory","Running low","border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200"),
-                  ("tasks","Tasks","border-indigo-500/40 bg-indigo-500/10 text-indigo-200"),
-                  ("notes","Notes","border-zinc-700/80 bg-zinc-950/30 text-zinc-300")
-                ] %}
-                  {% set items = normalized.get(key) or [] %}
-                  {% if items|length %}
-                    <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/30 p-3">
-                      <div class="flex items-center justify-between">
-                        <div class="text-xs font-semibold text-zinc-300">{{ label }}</div>
-                        <span class="rounded-full border px-2 py-0.5 text-[11px] {{ badge }}">{{ items|length }}</span>
-                      </div>
-                      <div class="mt-2 grid gap-2">
-                        {% for it in items[:8] %}
-                          <a href="/shifts/{{ shift_id }}#log-{{ it.log_id }}" class="group rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-200 hover:border-zinc-700/80">
-                            <div class="flex items-start justify-between gap-3">
-                              <div class="min-w-0">
-                                <div class="truncate">{{ it.text }}</div>
-                                <div class="mt-1 text-[11px] text-zinc-500">id {{ it.log_id[:6] }}</div>
-                              </div>
-                              <span class="mt-0.5 text-[11px] text-indigo-300/70 group-hover:text-indigo-200">view</span>
-                            </div>
-                          </a>
-                        {% endfor %}
-                      </div>
-                    </div>
-                  {% endif %}
-                {% endfor %}
-              </div>
-            </details>
-          {% elif context_pack_html %}
-            <div class="mt-4 prose prose-invert prose-zinc max-w-none text-sm">
-              {{ context_pack_html | safe }}
-            </div>
-          {% elif context_pack.summary %}
-            <div class="mt-3 whitespace-pre-line text-xs text-zinc-400">{{ context_pack.summary }}</div>
-          {% endif %}
-        </div>
-      {% elif run_status == 'running' %}
-        <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 text-sm text-zinc-400 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-          Building context pack…
-        </div>
-      {% endif %}
-
-      <details id="run-tasks" class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]" {% if run_status == 'running' %}open{% endif %}>
-        {% set c = namespace(total=0, done=0, failed=0, running=0) %}
-        {% for t in tasks %}
-          {% set c.total = c.total + 1 %}
-          {% set st = (t.status or "")|lower %}
-          {% if st == "completed" %}{% set c.done = c.done + 1 %}{% endif %}
-          {% if st == "failed" %}{% set c.failed = c.failed + 1 %}{% endif %}
-          {% if st == "running" %}{% set c.running = c.running + 1 %}{% endif %}
-        {% endfor %}
-        <summary class="flex cursor-pointer list-none items-center justify-between">
-          <div class="text-sm font-semibold">Run tasks</div>
-          <div class="text-xs text-zinc-500">
-            {{ c.done }}/{{ c.total }} done{% if c.failed %} · {{ c.failed }} failed{% endif %}{% if c.running %} · running{% endif %}
-          </div>
-        </summary>
-        {% set progress = ((c.done + c.failed) * 100 / c.total) if c.total else 0 %}
-        <div class="mt-3 h-2 overflow-hidden rounded-full border border-zinc-800/80 bg-zinc-950/40">
-          <div
-            class="h-full {% if c.failed %}bg-rose-500/40{% else %}bg-emerald-500/35{% endif %}"
-            style="width: {{ progress }}%"
-          ></div>
-        </div>
-        <div class="mt-4 grid gap-2">
-          {% for t in tasks %}
-            {% set status = (t.status or "")|lower %}
-            <div class="flex items-center justify-between rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-4 py-3 text-xs {% if selected_planner_task and t.name == selected_planner_task %}ring-1 {{ accent_ring }}{% endif %}">
-              <div>
-                <div class="font-semibold text-zinc-200">{{ t.name }}</div>
-                <div class="text-zinc-500">{{ t.agent_name }}</div>
-                <div class="mt-1 text-[11px] text-zinc-600">
-                  {% if t.meta and t.meta.skill %}skill: {{ t.meta.skill }}{% endif %}
-                  {% set shown_attempt = (t.outputs.attempts if t.outputs and (t.outputs.attempts is not none) else t.attempt) %}
-                  {% if shown_attempt and t.max_attempts %} · attempt {{ shown_attempt }}/{{ t.max_attempts }}{% endif %}
-                  {% set task_provider = (t.outputs.provider if t.outputs and t.outputs.provider else (t.inputs.provider if t.inputs and t.inputs.provider else "")) %}
-                  {% set task_model = (t.outputs.model if t.outputs and t.outputs.model else (t.inputs.model if t.inputs and t.inputs.model else "")) %}
-                  {% if task_provider %} · source: {{ task_provider }}{% endif %}
-                  {% if task_model %} · {{ task_model }}{% endif %}
-                  {% if t.outputs and t.outputs.provider_fallback_from %} · fallback from {{ t.outputs.provider_fallback_from }}{% endif %}
-                  {% if t.outputs and t.outputs.fallback %} · fallback{% endif %}
-                </div>
-                {% if t.outputs and t.outputs.error %}
-                  <div class="mt-1 text-[11px] text-rose-300">error: {{ t.outputs.error }}</div>
-                {% endif %}
-                {% if t.error and t.error.message %}
-                  <div class="mt-1 text-[11px] text-rose-300">error: {{ t.error.type }}: {{ t.error.message }}</div>
-                {% endif %}
-              </div>
-              <div class="rounded-full border px-3 py-1 text-[11px] font-semibold
-                {% if status == 'completed' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
-                {% elif status == 'running' %}border-amber-500/40 bg-amber-500/10 text-amber-200
-                {% elif status == 'failed' %}border-rose-500/40 bg-rose-500/10 text-rose-200
-                {% elif status == 'queued' %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300
-                {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
-                {{ t.status }}
-              </div>
-            </div>
-          {% endfor %}
-          {% if tasks|length == 0 %}
-            <div class="text-sm text-zinc-400">No tasks recorded.</div>
-          {% endif %}
-        </div>
-      </details>
-
-      <div id="decision-card" class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-        <div class="flex items-center justify-between">
-          <div class="text-sm font-semibold">Decision Card</div>
-          {% set judge_mode = (decision.judge_mode or "heuristic") if decision and (decision.judge_mode is defined) else "heuristic" %}
-          {% set judge_model = (decision.judge_model or "") if decision and (decision.judge_model is defined) else "" %}
-          <div class="text-xs text-zinc-500">
-            referee {{ judge_mode }}{% if judge_model %} · {{ judge_model }}{% endif %}
-          </div>
-        </div>
-
-        {% if decision %}
-          <div class="mt-4">
-            <div class="text-xs font-semibold text-zinc-300">Rubric Scores</div>
-            <div class="mt-2 overflow-hidden rounded-2xl border border-zinc-800/80">
-              <table class="w-full text-left text-xs">
-                <thead class="bg-zinc-950/50">
-                  <tr class="text-zinc-400">
-                    <th class="px-3 py-2">Archetype</th>
-                    <th class="px-3 py-2">Total</th>
-                    <th class="px-3 py-2">Commit</th>
-                    <th class="px-3 py-2">Deadline</th>
-                    <th class="px-3 py-2">Energy</th>
-                    <th class="px-3 py-2">Time</th>
-                    <th class="px-3 py-2">Inventory</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for key in ["sleep_first","errands_first","admin_first"] %}
-                    {% set scores = decision.scores.get(key) if decision.scores else None %}
-                    {% if scores %}
-                      <tr class="border-t border-zinc-800/80 {% if key == decision.selected_archetype %}{{ accent_row_bg }}{% endif %}">
-                        <td class="px-3 py-2 font-semibold text-zinc-200">{{ archetype_labels.get(key, key.replace("_","-")) }}</td>
-                        <td class="px-3 py-2 text-zinc-300">{{ scores._total.score if scores._total is defined else "—" }}</td>
-                        <td class="px-3 py-2 text-zinc-300">{{ scores.commitments_fit.score if scores.commitments_fit is defined else "—" }}</td>
-                        <td class="px-3 py-2 text-zinc-300">{{ scores.deadline_risk.score if scores.deadline_risk is defined else "—" }}</td>
-                        <td class="px-3 py-2 text-zinc-300">{{ scores.energy_match.score if scores.energy_match is defined else "—" }}</td>
-                        <td class="px-3 py-2 text-zinc-300">{{ scores.time_window.score if scores.time_window is defined else "—" }}</td>
-                        <td class="px-3 py-2 text-zinc-300">{{ scores.inventory_risk.score if scores.inventory_risk is defined else "—" }}</td>
-                      </tr>
-                    {% endif %}
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {% set win = decision.selected_archetype %}
-          {% set win_scores = (decision.scores.get(win) if decision.scores else None) %}
-          {% if win_scores %}
-            <details class="mt-4 rounded-2xl border border-zinc-800/80 bg-zinc-950/40 p-4">
-              <summary class="cursor-pointer text-xs font-semibold text-zinc-300">
-                Why the referee picked {{ archetype_labels.get(win, win.replace("_","-")) }}
-              </summary>
-              <div class="mt-3 grid gap-2 text-xs text-zinc-300">
-                {% for dim, label in [
-                  ("commitments_fit","Commitments fit"),
-                  ("deadline_risk","Deadline risk"),
-                  ("energy_match","Energy match"),
-                  ("time_window","Time window"),
-                  ("inventory_risk","Inventory risk")
-                ] %}
-                  {% set d = (win_scores.get(dim) if win_scores and (win_scores.get is defined) else None) %}
-                  <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/30 px-3 py-2">
-                    <div class="flex items-center justify-between">
-                      <div class="font-semibold text-zinc-200">{{ label }}</div>
-                      {% if d and d.score is defined %}
-                        <div class="text-[11px] text-zinc-400">score {{ d.score }}</div>
-                      {% endif %}
-                    </div>
-                    {% if d and d.why is defined %}
-                      <div class="mt-1 text-[11px] text-zinc-400">{{ d.why }}</div>
-                    {% endif %}
-                  </div>
-                {% endfor %}
-              </div>
-            </details>
-          {% endif %}
-
-          <div class="mt-5 border-t border-zinc-800/80 pt-4">
-            <div class="text-xs font-semibold text-zinc-300">Evidence</div>
-            <div class="mt-3 grid gap-2">
-              {% for e in decision.evidence_links or [] %}
-                {% set t = (e.type or "")|lower %}
-                <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 p-3 text-xs text-zinc-300">
-                  <div class="flex items-center justify-between">
-                    <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
-                      {% if t == 'deadline' %}border-amber-500/40 bg-amber-500/10 text-amber-200
-                      {% elif t == 'inventory' %}border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200
-                      {% elif t == 'task' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
-                      {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
-                      {{ (e.type or "note")|upper }}
-                    </span>
-                    {% if e.log_id %}
-                      <a class="text-[11px] text-indigo-300 hover:text-indigo-200" href="/shifts/{{ shift_id }}#log-{{ e.log_id }}">view in shift</a>
-                    {% else %}
-                      <span class="text-[11px] text-zinc-500">linked</span>
-                    {% endif %}
-                  </div>
-                  <div class="mt-2">{{ e.text }}</div>
-                </div>
-              {% endfor %}
-              {% if (decision.evidence_links or [])|length == 0 %}
-                <div class="text-sm text-zinc-400">No evidence links recorded.</div>
-              {% endif %}
-            </div>
-          </div>
-        {% else %}
-          {% if run_status == 'running' %}
-            <div class="mt-4 text-sm text-zinc-400">Decision pending…</div>
-          {% else %}
-            <div class="mt-4 text-sm text-zinc-400">Decision not found.</div>
-          {% endif %}
-        {% endif %}
-      </div>
-
-      {% if roundtable_votes and roundtable_votes|length %}
-        <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-          <div class="flex items-center justify-between">
-            <div class="text-sm font-semibold">Roundtable (model votes)</div>
-            <div class="text-xs text-zinc-500">{{ roundtable_votes|length }} voices</div>
-          </div>
-          {% if decision and decision.selected_archetype %}
-            <div class="mt-2 text-xs text-zinc-400">
-              Winner: <span class="text-zinc-200">{{ archetype_labels.get(decision.selected_archetype, decision.selected_archetype.replace("_","-")) }}</span>
-            </div>
-          {% endif %}
-
-          {% set vc = namespace(sleep=0, errands=0, admin=0) %}
-          {% for m in roundtable_votes %}
-            {% set v = (m.meta.vote if m.meta and m.meta.vote else "") %}
-            {% if v == "sleep_first" %}{% set vc.sleep = vc.sleep + 1 %}{% endif %}
-            {% if v == "errands_first" %}{% set vc.errands = vc.errands + 1 %}{% endif %}
-            {% if v == "admin_first" %}{% set vc.admin = vc.admin + 1 %}{% endif %}
-          {% endfor %}
-          <div class="mt-3 flex flex-wrap gap-2 text-xs">
-            <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 text-zinc-300">
-              {{ archetype_labels.get("sleep_first","sleep-first") }}: {{ vc.sleep }}
-            </span>
-            <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 text-zinc-300">
-              Errands-first: {{ vc.errands }}
-            </span>
-            <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 text-zinc-300">
-              Admin-first: {{ vc.admin }}
-            </span>
-          </div>
-
-          {% set cards = (roundtable_cards if roundtable_cards is defined else []) %}
-          <div class="mt-4 grid gap-2">
-            {% for c in cards %}
-              <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 p-3 text-xs text-zinc-300">
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2 py-0.5 text-[11px] text-zinc-300">
-                    {{ c.provider }}{% if c.model %} · {{ c.model }}{% endif %}
-                  </span>
-                  {% if c.vote %}
-                    <span class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2 py-0.5 text-[11px] text-zinc-300">
-                      vote: {{ archetype_labels.get(c.vote, c.vote.replace("_","-")) }}
-                    </span>
-                  {% endif %}
-                  {% if c.agree is not none and c.vote %}
-                    <span class="rounded-full border px-2 py-0.5 text-[11px]
-                      {% if c.agree %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
-                      {% else %}border-amber-500/40 bg-amber-500/10 text-amber-200{% endif %}">
-                      {% if c.agree %}agrees{% else %}dissent{% endif %}
-                    </span>
-                  {% endif %}
-                </div>
-                {% if c.why and c.why|length %}
-                  <div class="mt-2 text-[11px] font-semibold text-zinc-300">Why</div>
-                  <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[11px] text-zinc-400">
-                    {% for r in c.why %}
-                      <li>{{ r }}</li>
-                    {% endfor %}
-                  </ul>
-                {% endif %}
-                {% if c.concern %}
-                  <div class="mt-2 text-[11px] text-zinc-400"><span class="font-semibold text-zinc-300">Concern:</span> {{ c.concern }}</div>
-                {% endif %}
-                {% if c.tweak %}
-                  <div class="mt-1 text-[11px] text-zinc-400"><span class="font-semibold text-zinc-300">Tweak:</span> {{ c.tweak }}</div>
-                {% endif %}
-              </div>
-            {% endfor %}
-          </div>
-        </div>
-      {% endif %}
-
-      <div id="proposals" class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-        <div class="text-sm font-semibold">Proposals</div>
-        <div class="mt-3 text-sm text-zinc-400">
-          Expand to see the three competing plans. The winner is highlighted.
-        </div>
-        <div class="mt-4 grid gap-3">
-          {% for p in proposals %}
-            {% set pt = namespace(task=None) %}
-            {% for t in tasks %}
-              {% if t.name == ("plan_" ~ p.archetype) %}
-                {% set pt.task = t %}
-              {% endif %}
-            {% endfor %}
-            <details class="group rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] {% if decision and p.archetype == decision.selected_archetype %}ring-1 {{ accent_ring }}{% endif %}" {% if decision and p.archetype == decision.selected_archetype %}open{% endif %}>
-              <summary class="flex cursor-pointer list-none items-center justify-between gap-4">
-                <div class="min-w-0">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <div class="text-sm font-semibold">{{ p.title }}</div>
-                    {% if decision and p.archetype == decision.selected_archetype %}
-                      <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold {{ accent_badge }}">
-                        Selected
-                      </span>
-                    {% endif %}
-                    {% if pt.task and pt.task.outputs and pt.task.outputs.provider %}
-                      {% set prov = (pt.task.outputs.provider or "")|lower %}
-                      <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
-                        {% if prov == 'openai' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
-                        {% elif prov == 'anthropic' %}border-amber-500/40 bg-amber-500/10 text-amber-200
-                        {% elif prov == 'gemini' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
-                        {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
-                        {{ pt.task.outputs.provider }}{% if pt.task.outputs.model %} · {{ pt.task.outputs.model }}{% endif %}
-                      </span>
-                    {% else %}
-                      <span class="rounded-full border border-zinc-700/80 bg-zinc-950/30 px-2.5 py-1 text-[11px] font-semibold text-zinc-300">
-                        heuristic
-                      </span>
-                    {% endif %}
-                  </div>
-                  <div class="mt-1 text-xs text-zinc-500">{{ archetype_labels.get(p.archetype, p.archetype.replace("_","-")) }}</div>
-                </div>
-                <div class="text-xs text-zinc-400 group-open:text-zinc-200">Details</div>
-              </summary>
-              <div class="mt-4 grid gap-3">
-                {% if p.start_here %}
-                  <div>
-                    <div class="text-xs font-semibold text-zinc-300">Start here (next 10–15 min)</div>
-                    <ul class="mt-2 list-disc pl-5 text-sm text-zinc-300">
-                      {% for s in (p.start_here or [])[:5] %}
-                        <li>{{ s }}</li>
-                      {% endfor %}
-                    </ul>
-                  </div>
-                {% endif %}
-                <div>
-                  <div class="text-xs font-semibold text-zinc-300">Blocks</div>
-                  <ul class="mt-2 list-disc pl-5 text-sm text-zinc-300">
-                    {% for b in (p.plan_blocks or []) %}
-                      <li>{{ b }}</li>
-                    {% endfor %}
-                    {% if (p.plan_blocks or [])|length == 0 %}
-                      <li class="text-zinc-500">No blocks recorded.</li>
-                    {% endif %}
-                  </ul>
-                </div>
-                {% if p.top_priorities %}
-                  <div>
-                    <div class="text-xs font-semibold text-zinc-300">Top priorities</div>
-                    <ul class="mt-2 list-disc pl-5 text-sm text-zinc-300">
-                      {% for x in (p.top_priorities or []) %}
-                        <li>{{ x }}</li>
-                      {% endfor %}
-                    </ul>
-                  </div>
-                {% endif %}
-                {% if p.rationale %}
-                  <div>
-                    <div class="text-xs font-semibold text-zinc-300">Why this plan</div>
-                    <ul class="mt-2 list-disc pl-5 text-sm text-zinc-300">
-                      {% for x in (p.rationale or []) %}
-                        <li>{{ x }}</li>
-                      {% endfor %}
-                    </ul>
-                  </div>
-                {% endif %}
-                {% if p.tradeoffs %}
-                  <div>
-                    <div class="text-xs font-semibold text-zinc-300">Tradeoffs</div>
-                    <ul class="mt-2 list-disc pl-5 text-sm text-zinc-300">
-                      {% for x in (p.tradeoffs or []) %}
-                        <li>{{ x }}</li>
-                      {% endfor %}
-                    </ul>
-                  </div>
-                {% endif %}
-                {% if p.stop_rule %}
-                  <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/35 p-3 text-xs text-zinc-300">
-                    <div class="font-semibold text-zinc-200">Stop rule</div>
-                    <div class="mt-1">{{ p.stop_rule }}</div>
-                  </div>
-                {% endif %}
-              </div>
-            </details>
-          {% endfor %}
-          {% if proposals|length == 0 %}
-            <div class="text-sm text-zinc-400">
-              {% if run_status == 'running' %}Generating proposals…{% else %}No proposals found.{% endif %}
-            </div>
-          {% endif %}
-        </div>
+  <div class="mt-6">
+    <div role="tablist" aria-label="Results tabs" class="flex flex-wrap items-center gap-2 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-2 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+      <button
+        type="button"
+        role="tab"
+        class="tab-btn rounded-2xl border px-4 py-2 text-sm font-semibold hover:bg-zinc-950/40 hover:text-zinc-100 {% if default_tab == 'handoff' %}border-zinc-700/80 bg-zinc-950/70 text-zinc-100{% else %}border-transparent text-zinc-300{% endif %}"
+        data-tab="handoff"
+        aria-controls="panel-handoff"
+        aria-selected="{% if default_tab == 'handoff' %}true{% else %}false{% endif %}"
+        tabindex="{% if default_tab == 'handoff' %}0{% else %}-1{% endif %}"
+      >
+        Handoff
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="tab-btn rounded-2xl border px-4 py-2 text-sm font-semibold hover:bg-zinc-950/40 hover:text-zinc-100 {% if default_tab == 'decision' %}border-zinc-700/80 bg-zinc-950/70 text-zinc-100{% else %}border-transparent text-zinc-300{% endif %}"
+        data-tab="decision"
+        aria-controls="panel-decision"
+        aria-selected="{% if default_tab == 'decision' %}true{% else %}false{% endif %}"
+        tabindex="{% if default_tab == 'decision' %}0{% else %}-1{% endif %}"
+      >
+        Council
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="tab-btn rounded-2xl border px-4 py-2 text-sm font-semibold hover:bg-zinc-950/40 hover:text-zinc-100 {% if default_tab == 'audit' %}border-zinc-700/80 bg-zinc-950/70 text-zinc-100{% else %}border-transparent text-zinc-300{% endif %}"
+        data-tab="audit"
+        aria-controls="panel-audit"
+        aria-selected="{% if default_tab == 'audit' %}true{% else %}false{% endif %}"
+        tabindex="{% if default_tab == 'audit' %}0{% else %}-1{% endif %}"
+      >
+        Audit
+      </button>
+      <div class="ml-auto hidden pr-2 text-xs text-zinc-500 lg:block">
+        Tip: flip Energy and re-run to show v1→v2 diffs.
       </div>
     </div>
 
-    <div class="lg:col-span-1">
-      <details
-        id="handoff"
-        data-persist="handoff"
-        data-default-open="closed"
-        class="sticky-panel isolate z-10 rounded-3xl border border-zinc-800/80 bg-zinc-950 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] lg:sticky lg:top-24"
-      >
-        <summary class="flex cursor-pointer list-none items-center justify-between gap-4">
-          <div class="flex items-center gap-2">
+    <div class="mt-6 space-y-6">
+      <div id="panel-decision" data-tab-panel="decision" role="tabpanel" class="{% if default_tab != 'decision' %}hidden{% endif %}">
+        <div id="decision-card" class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-semibold">Decision Card</div>
+            {% set judge_mode = (decision.judge_mode or "heuristic") if decision and (decision.judge_mode is defined) else "heuristic" %}
+            {% set judge_model = (decision.judge_model or "") if decision and (decision.judge_model is defined) else "" %}
+            <div class="text-xs text-zinc-500">
+              referee {{ judge_mode }}{% if judge_model %} · {{ judge_model }}{% endif %}
+            </div>
+          </div>
+
+          {% if decision %}
+            <div class="mt-4">
+              <div class="text-xs font-semibold text-zinc-300">Rubric Scores</div>
+              <div class="mt-2 overflow-hidden rounded-2xl border border-zinc-800/80">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-zinc-950/50">
+                    <tr class="text-zinc-400">
+                      <th class="px-3 py-2">Archetype</th>
+                      <th class="px-3 py-2">Total</th>
+                      <th class="px-3 py-2">Commit</th>
+                      <th class="px-3 py-2">Deadline</th>
+                      <th class="px-3 py-2">Energy</th>
+                      <th class="px-3 py-2">Time</th>
+                      <th class="px-3 py-2">Inventory</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for key in ["sleep_first","errands_first","admin_first"] %}
+                      {% set scores = decision.scores.get(key) if decision.scores else None %}
+                      {% if scores %}
+                        <tr class="border-t border-zinc-800/80 {% if key == decision.selected_archetype %}{{ accent_row_bg }}{% endif %}">
+                          <td class="px-3 py-2 font-semibold text-zinc-200">{{ archetype_labels.get(key, key.replace("_","-")) }}</td>
+                          <td class="px-3 py-2 text-zinc-300">{{ scores._total.score if scores._total is defined else "—" }}</td>
+                          <td class="px-3 py-2 text-zinc-300">{{ scores.commitments_fit.score if scores.commitments_fit is defined else "—" }}</td>
+                          <td class="px-3 py-2 text-zinc-300">{{ scores.deadline_risk.score if scores.deadline_risk is defined else "—" }}</td>
+                          <td class="px-3 py-2 text-zinc-300">{{ scores.energy_match.score if scores.energy_match is defined else "—" }}</td>
+                          <td class="px-3 py-2 text-zinc-300">{{ scores.time_window.score if scores.time_window is defined else "—" }}</td>
+                          <td class="px-3 py-2 text-zinc-300">{{ scores.inventory_risk.score if scores.inventory_risk is defined else "—" }}</td>
+                        </tr>
+                      {% endif %}
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {% set ev = decision.evidence_links or [] %}
+            <details class="mt-5 border-t border-zinc-800/80 pt-4">
+              <summary class="cursor-pointer select-none text-xs font-semibold text-zinc-300">
+                Evidence <span class="ml-1 text-zinc-500">({{ ev|length }})</span>
+              </summary>
+              <div class="mt-3 grid gap-2">
+                {% for e in ev %}
+                  {% set t = (e.type or "")|lower %}
+                  <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 p-3 text-xs text-zinc-300">
+                    <div class="flex items-center justify-between">
+                      <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
+                        {% if t == 'deadline' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                        {% elif t == 'inventory' %}border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200
+                        {% elif t == 'task' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
+                        {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+                        {{ (e.type or "note")|upper }}
+                      </span>
+                      {% if e.log_id %}
+                        <a class="text-[11px] text-indigo-300 hover:text-indigo-200" href="/shifts/{{ shift_id }}#log-{{ e.log_id }}">view in shift</a>
+                      {% else %}
+                        <span class="text-[11px] text-zinc-500">linked</span>
+                      {% endif %}
+                    </div>
+                    <div class="mt-2">{{ e.text }}</div>
+                  </div>
+                {% endfor %}
+                {% if ev|length == 0 %}
+                  <div class="text-sm text-zinc-400">No evidence links recorded.</div>
+                {% endif %}
+              </div>
+            </details>
+          {% else %}
+            <div class="mt-4 text-sm text-zinc-400">
+              {% if run_status == 'running' %}Decision pending…{% else %}Decision not found.{% endif %}
+            </div>
+          {% endif %}
+	        </div>
+
+	        <details class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+	          <summary class="cursor-pointer text-sm font-semibold text-zinc-200">Why three competing plans?</summary>
+	          <div class="mt-3 text-sm text-zinc-300">
+	            <ul class="list-disc space-y-1 pl-5">
+	              <li>Each planner optimizes a different priority (stability / errands / admin) so tradeoffs are explicit.</li>
+	              <li>Independent proposals reduce single-model bias and make failures obvious (dissent shows up in votes).</li>
+	              <li>Every task + message is persisted in MongoDB so the run is replayable and auditable.</li>
+	            </ul>
+	          </div>
+	          <div class="mt-3 text-xs text-zinc-500">
+	            Tip: each plan shows a provider/model badge, and the <a class="text-indigo-300 hover:text-indigo-200" href="#roundtable">Roundtable</a> captures “agree / dissent” critiques.
+	          </div>
+	        </details>
+
+		        <div id="proposals" class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+		          <div class="flex flex-wrap items-center justify-between gap-3">
+		            <div class="text-sm font-semibold">Proposals</div>
+		            <div class="text-xs text-zinc-500">three competing plans</div>
+		          </div>
+		          <div class="mt-3 text-sm text-zinc-400">
+		            Compare them side-by-side. Each plan shows its source model (ChatGPT / Claude / Gemini) when available.
+		          </div>
+
+		          <div class="mt-4 grid gap-3 lg:grid-cols-3">
+		            {% for key in ["sleep_first","errands_first","admin_first"] %}
+		              {% set p = (proposals | selectattr("archetype","equalto", key) | list | first) %}
+		              {% set pt = namespace(task=None) %}
+		              {% for t in tasks %}
+		                {% if t.name == ("plan_" ~ key) %}
+		                  {% set pt.task = t %}
+		                {% endif %}
+		              {% endfor %}
+
+		              {% set plan_label = archetype_labels.get(key, key.replace("_","-")) %}
+		              {% set plan_name = (p.title if p else "") %}
+		              {% set provider_name = (pt.task.outputs.provider if pt.task and pt.task.outputs and pt.task.outputs.provider else (pt.task.inputs.provider if pt.task and pt.task.inputs and pt.task.inputs.provider else "")) %}
+		              {% set provider_model = (pt.task.outputs.model if pt.task and pt.task.outputs and pt.task.outputs.model else (pt.task.inputs.model if pt.task and pt.task.inputs and pt.task.inputs.model else "")) %}
+		              {% set prov = (provider_name or "")|lower %}
+		              {% set provider_label = provider_name %}
+		              {% if prov == "openai" %}{% set provider_label = "ChatGPT" %}{% endif %}
+		              {% if prov == "anthropic" %}{% set provider_label = "Claude" %}{% endif %}
+		              {% if prov == "gemini" %}{% set provider_label = "Gemini" %}{% endif %}
+
+		              <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] {% if decision and key == decision.selected_archetype %}ring-1 {{ accent_ring }}{% endif %}">
+		                <div class="flex flex-wrap items-start justify-between gap-3">
+		                  <div class="min-w-0">
+		                    <div class="flex flex-wrap items-center gap-2">
+		                      <div class="text-sm font-semibold text-zinc-100">{{ plan_label }}</div>
+		                      {% if decision and key == decision.selected_archetype %}
+		                        <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold {{ accent_badge }}">Selected</span>
+		                      {% endif %}
+		                      {% if provider_name %}
+		                        <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold
+		                          {% if prov == 'openai' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
+		                          {% elif prov == 'anthropic' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+		                          {% elif prov == 'gemini' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+		                          {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+		                          {{ provider_label }}{% if provider_model %} · {{ provider_model }}{% endif %}
+		                        </span>
+		                      {% else %}
+		                        <span class="rounded-full border border-zinc-700/80 bg-zinc-950/30 px-2.5 py-1 text-[11px] font-semibold text-zinc-300">heuristic</span>
+		                      {% endif %}
+		                    </div>
+		                    {% if plan_name and plan_name != plan_label %}
+		                      <div class="mt-1 text-xs text-zinc-500">plan name: {{ plan_name }}</div>
+		                    {% endif %}
+		                  </div>
+		                  {% if p and p.timeline_total_min and p.timeline_total_max %}
+		                    <div class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2.5 py-1 text-[11px] text-zinc-400">
+		                      ~{{ p.timeline_total_min }}–{{ p.timeline_total_max }}m
+		                    </div>
+		                  {% endif %}
+		                </div>
+
+		                {% if p %}
+		                  {% if p.start_here %}
+		                    <div class="mt-4">
+		                      <div class="text-[11px] font-semibold text-zinc-400">Start here (10–15 min)</div>
+		                      <ol class="mt-2 list-decimal space-y-1 pl-5 text-sm text-zinc-200">
+		                        {% for s in (p.start_here or [])[:4] %}
+		                          <li>{{ s }}</li>
+		                        {% endfor %}
+		                      </ol>
+		                    </div>
+		                  {% endif %}
+
+		                  {% if p.wins %}
+		                    <div class="mt-4">
+		                      <div class="text-[11px] font-semibold text-zinc-400">Definition of done</div>
+		                      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-200">
+		                        {% for w in (p.wins or [])[:4] %}
+		                          <li>{{ w }}</li>
+		                        {% endfor %}
+		                      </ul>
+		                    </div>
+		                  {% endif %}
+
+		                  {% if p.timeline %}
+		                    <div class="mt-4">
+		                      <div class="text-[11px] font-semibold text-zinc-400">Timeline</div>
+		                      <div class="mt-2 grid gap-2">
+		                        {% for it in (p.timeline or [])[:4] %}
+		                          <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/30 px-3 py-2 text-xs text-zinc-200">
+		                            <div class="flex items-center justify-between gap-3">
+		                              <div class="min-w-0 truncate">{{ it.label }}</div>
+		                              <div class="shrink-0 text-[11px] text-zinc-500">{{ it.min }}–{{ it.max }}m</div>
+		                            </div>
+		                          </div>
+		                        {% endfor %}
+		                      </div>
+		                    </div>
+		                  {% endif %}
+
+		                  {% if p.plan_blocks %}
+		                    <div class="mt-4">
+		                      <div class="text-[11px] font-semibold text-zinc-400">Blocks</div>
+		                      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-200">
+		                        {% for b in (p.plan_blocks or [])[:4] %}
+		                          <li>{{ b }}</li>
+		                        {% endfor %}
+		                      </ul>
+		                    </div>
+		                  {% endif %}
+
+		                  {% if p.top_priorities %}
+		                    <div class="mt-4">
+		                      <div class="text-[11px] font-semibold text-zinc-400">Top priorities</div>
+		                      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-200">
+		                        {% for x in (p.top_priorities or [])[:4] %}
+		                          <li>{{ x }}</li>
+		                        {% endfor %}
+		                      </ul>
+		                    </div>
+		                  {% endif %}
+
+		                  {% if p.tradeoffs %}
+		                    <div class="mt-4">
+		                      <div class="text-[11px] font-semibold text-zinc-400">Tradeoffs</div>
+		                      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
+		                        {% for x in (p.tradeoffs or [])[:3] %}
+		                          <li>{{ x }}</li>
+		                        {% endfor %}
+		                      </ul>
+		                    </div>
+		                  {% endif %}
+
+		                  {% if p.if_then %}
+		                    <div class="mt-4">
+		                      <div class="text-[11px] font-semibold text-zinc-400">If‑then</div>
+		                      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
+		                        {% for x in (p.if_then or [])[:3] %}
+		                          <li>{{ x }}</li>
+		                        {% endfor %}
+		                      </ul>
+		                    </div>
+		                  {% endif %}
+
+		                  {% if p.stop_rule %}
+		                    <div class="mt-4 rounded-2xl border border-zinc-800/80 bg-zinc-950/35 p-3 text-xs text-zinc-300">
+		                      <div class="font-semibold text-zinc-200">Stop rule</div>
+		                      <div class="mt-1">{{ p.stop_rule }}</div>
+		                    </div>
+		                  {% endif %}
+		                {% else %}
+		                  <div class="mt-3 text-sm text-zinc-400">
+		                    {% if run_status == 'running' %}Generating…{% else %}No proposal found.{% endif %}
+		                  </div>
+		                {% endif %}
+		              </div>
+		            {% endfor %}
+		          </div>
+		        </div>
+
+		        {% set cards = (roundtable_cards if roundtable_cards is defined else []) %}
+		        {% set votes = (roundtable_votes if roundtable_votes is defined else []) %}
+		        {% if (cards and cards|length) or (votes and votes|length) %}
+		          <div id="roundtable" class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+		            <div class="flex flex-wrap items-center justify-between gap-3">
+		              <div class="text-sm font-semibold">Roundtable (model votes)</div>
+		              <div class="text-xs text-zinc-500">
+		                {% if cards and cards|length %}{{ cards|length }} voices{% else %}{{ votes|length }} votes{% endif %}
+		              </div>
+		            </div>
+		            <div class="mt-3 text-sm text-zinc-400">
+		              Each critic reads the same context pack and votes independently. Dissent highlights assumptions worth revisiting.
+		            </div>
+
+	            {% set vc = namespace(sleep=0, errands=0, admin=0) %}
+	            {% for c in cards %}
+	              {% if c.vote == "sleep_first" %}{% set vc.sleep = vc.sleep + 1 %}{% endif %}
+	              {% if c.vote == "errands_first" %}{% set vc.errands = vc.errands + 1 %}{% endif %}
+	              {% if c.vote == "admin_first" %}{% set vc.admin = vc.admin + 1 %}{% endif %}
+	            {% endfor %}
+	            {% if cards and cards|length %}
+	              <div class="mt-3 flex flex-wrap gap-2 text-xs">
+	                <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 text-zinc-300">
+	                  {{ archetype_labels.get("sleep_first","sleep-first") }}: {{ vc.sleep }}
+	                </span>
+	                <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 text-zinc-300">
+	                  {{ archetype_labels.get("errands_first","errands-first") }}: {{ vc.errands }}
+	                </span>
+	                <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 text-zinc-300">
+	                  {{ archetype_labels.get("admin_first","admin-first") }}: {{ vc.admin }}
+	                </span>
+	              </div>
+	            {% endif %}
+
+		            <div class="mt-4 grid gap-2 lg:grid-cols-2">
+		              {% for c in cards %}
+		                <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 p-3 text-xs text-zinc-300">
+		                  <div class="flex flex-wrap items-center gap-2">
+	                    <span class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2 py-0.5 text-[11px] text-zinc-300">
+	                      {{ c.provider }}{% if c.model %} · {{ c.model }}{% endif %}
+	                    </span>
+	                    {% if c.vote %}
+	                      <span class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2 py-0.5 text-[11px] text-zinc-300">
+	                        vote: {{ archetype_labels.get(c.vote, c.vote.replace("_","-")) }}
+	                      </span>
+	                    {% endif %}
+	                    {% if c.agree is not none and c.vote %}
+	                      <span class="rounded-full border px-2 py-0.5 text-[11px]
+	                        {% if c.agree %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+	                        {% else %}border-amber-500/40 bg-amber-500/10 text-amber-200{% endif %}">
+	                        {% if c.agree %}agrees{% else %}dissent{% endif %}
+	                      </span>
+	                    {% endif %}
+	                  </div>
+	                  {% if c.why and c.why|length %}
+	                    <div class="mt-2 text-[11px] font-semibold text-zinc-300">Why</div>
+	                    <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[11px] text-zinc-400">
+	                      {% for r in c.why %}
+	                        <li>{{ r }}</li>
+	                      {% endfor %}
+	                    </ul>
+	                  {% endif %}
+	                  {% if c.concern %}
+	                    <div class="mt-2 text-[11px] text-zinc-400"><span class="font-semibold text-zinc-300">Concern:</span> {{ c.concern }}</div>
+	                  {% endif %}
+		                  {% if c.tweak %}
+		                    <div class="mt-1 text-[11px] text-zinc-400"><span class="font-semibold text-zinc-300">Tweak:</span> {{ c.tweak }}</div>
+		                  {% endif %}
+		                </div>
+		              {% endfor %}
+		            </div>
+		          </div>
+		        {% endif %}
+
+		        {% set dialogue = (council_dialogue if council_dialogue is defined else []) %}
+		        {% if dialogue and dialogue|length %}
+		          <details id="council-dialogue" data-persist="council-dialogue" data-default-open="open" class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+		            <summary class="flex cursor-pointer list-none items-center justify-between">
+		              <div class="text-sm font-semibold">Dialogue (audit trail)</div>
+		              <div class="text-xs text-zinc-500">{{ dialogue|length }} messages</div>
+		            </summary>
+		            <div class="mt-3 text-sm text-zinc-400">
+		              Who said what (with model attribution), in run order.
+		            </div>
+		            <div class="relative mt-4">
+		              <div class="absolute bottom-2 left-2 top-2 w-px bg-zinc-800/80"></div>
+		              <div class="grid gap-3">
+		                {% for m in dialogue %}
+		                  {% set k = (m.kind or "")|lower %}
+		                  {% set prov2 = (m.provider or "")|lower %}
+		                  {% set prov_label2 = (m.provider or "") %}
+		                  {% if prov2 == "openai" %}{% set prov_label2 = "ChatGPT" %}{% endif %}
+		                  {% if prov2 == "anthropic" %}{% set prov_label2 = "Claude" %}{% endif %}
+		                  {% if prov2 == "gemini" %}{% set prov_label2 = "Gemini" %}{% endif %}
+		                  <div class="relative pl-6">
+		                    <div class="absolute left-[6px] top-5 h-2 w-2 rounded-full bg-zinc-600"></div>
+		                    <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 p-4">
+		                      <div class="flex flex-wrap items-center justify-between gap-2">
+		                        <div class="flex flex-wrap items-center gap-2">
+		                          <div class="text-xs font-semibold text-zinc-200">{{ m.sender }}</div>
+		                          <span class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2 py-0.5 text-[11px] text-zinc-300">{{ m.kind }}</span>
+		                          {% if m.archetype %}
+		                            <span class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2 py-0.5 text-[11px] text-zinc-300">
+		                              {{ archetype_labels.get(m.archetype, m.archetype.replace("_","-")) }}
+		                            </span>
+		                          {% endif %}
+		                          {% if m.provider %}
+		                            <span class="rounded-full border px-2 py-0.5 text-[11px]
+		                              {% if prov2 == 'openai' %}border-indigo-500/40 bg-indigo-500/10 text-indigo-200
+		                              {% elif prov2 == 'anthropic' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+		                              {% elif prov2 == 'gemini' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+		                              {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+		                              {{ prov_label2 }}{% if m.model %} · {{ m.model }}{% endif %}
+		                            </span>
+		                          {% endif %}
+		                          {% if k == "roundtable_vote" and m.vote %}
+		                            <span class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2 py-0.5 text-[11px] text-zinc-300">
+		                              vote: {{ archetype_labels.get(m.vote, m.vote.replace("_","-")) }}
+		                            </span>
+		                            {% if m.agree is not none %}
+		                              <span class="rounded-full border px-2 py-0.5 text-[11px]
+		                                {% if m.agree %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+		                                {% else %}border-amber-500/40 bg-amber-500/10 text-amber-200{% endif %}">
+		                                {% if m.agree %}agrees{% else %}dissent{% endif %}
+		                              </span>
+		                            {% endif %}
+		                          {% endif %}
+		                        </div>
+		                        <div class="text-[11px] text-zinc-500">
+		                          {% if m.created_at_iso %}
+		                            <time data-time="local" datetime="{{ m.created_at_iso }}">{{ m.created_at_iso }}</time>
+		                          {% endif %}
+		                        </div>
+		                      </div>
+		                      {% if m.content_html %}
+		                        <div class="markdown mt-3 text-sm">
+		                          {{ m.content_html | safe }}
+		                        </div>
+		                      {% elif m.content_raw %}
+		                        <div class="mt-3 whitespace-pre-wrap text-sm text-zinc-300">{{ m.content_raw }}</div>
+		                      {% endif %}
+		                    </div>
+		                  </div>
+		                {% endfor %}
+		              </div>
+		            </div>
+		          </details>
+		        {% endif %}
+	      </div>
+
+      <div id="panel-handoff" data-tab-panel="handoff" role="tabpanel" class="{% if default_tab != 'handoff' %}hidden{% endif %}">
+        <div id="handoff" class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+          <div class="flex items-center justify-between">
             <div class="text-sm font-semibold">Handoff</div>
             {% if artifact %}
-              <div class="rounded-full border border-zinc-800/80 bg-zinc-950/30 px-2.5 py-1 text-[11px] text-zinc-400">v{{ artifact.version }}</div>
+              <div class="text-xs text-zinc-500">v{{ artifact.version }}</div>
             {% endif %}
           </div>
-          <div class="text-xs text-zinc-500">{% if artifact %}export{% else %}{% if run_status == 'running' %}generating{% else %}empty{% endif %}{% endif %}</div>
-        </summary>
-
-        <div class="mt-4">
+          {% if decision %}
+            {% set winner_label = archetype_labels.get(decision.selected_archetype, decision.selected_archetype.replace("_","-")) %}
+            {% set cards_for_handoff = (roundtable_cards if roundtable_cards is defined else []) %}
+            {% set agree_count = 0 %}
+            {% set dissent_count = 0 %}
+            {% for c in cards_for_handoff %}
+              {% if c.agree %}
+                {% set agree_count = agree_count + 1 %}
+              {% elif c.vote %}
+                {% set dissent_count = dissent_count + 1 %}
+              {% endif %}
+            {% endfor %}
+            <div class="mt-4 rounded-2xl border border-zinc-800/80 bg-zinc-950/40 p-4">
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="text-xs font-semibold text-zinc-400">Final decision</div>
+                  <div class="mt-1 flex flex-wrap items-center gap-2">
+                    <div class="text-lg font-semibold text-zinc-100">{{ winner_label }}</div>
+                    <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold {{ accent_badge }}">selected</span>
+                    <a class="text-xs text-indigo-300 hover:text-indigo-200" href="#decision-card">view council →</a>
+                  </div>
+                  <div class="mt-2 text-sm text-zinc-300">{{ decision.summary }}</div>
+                </div>
+                {% if cards_for_handoff and cards_for_handoff|length %}
+                  <div class="shrink-0 text-xs text-zinc-500">
+                    <div class="text-[11px] font-semibold text-zinc-400">Roundtable</div>
+                    <div class="mt-1 flex flex-wrap items-center justify-end gap-2">
+                      <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5 text-[11px] text-zinc-300">
+                        {{ cards_for_handoff|length }} voices
+                      </span>
+                      <span class="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-200">
+                        {{ agree_count }} agree
+                      </span>
+                      <span class="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
+                        {{ dissent_count }} dissent
+                      </span>
+                      <a class="text-[11px] text-indigo-300 hover:text-indigo-200" href="#roundtable">details →</a>
+                    </div>
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          {% endif %}
+          <div class="mt-3 flex flex-wrap gap-2">
+            <a
+              class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-700/80 {% if not artifact %}pointer-events-none opacity-50{% endif %}"
+              href="/shifts/{{ shift_id }}/runs/{{ run['_id'] }}/handoff.md"
+            >
+              Download
+            </a>
+            <button
+              class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-700/80 disabled:opacity-50"
+              data-url="/shifts/{{ shift_id }}/runs/{{ run['_id'] }}/handoff.md?raw=1"
+              {% if not artifact %}disabled{% endif %}
+            >
+              Copy
+            </button>
+          </div>
           {% if artifact %}
-            <div class="markdown text-sm">
+            <div class="markdown mt-4 text-sm">
               {{ artifact_html | safe }}
             </div>
             {% if artifact.diff %}
-              <details class="mt-5 border-t border-zinc-800 pt-4" data-persist="handoff-diff" data-default-open="closed">
+              <details class="mt-5 border-t border-zinc-800 pt-4">
                 <summary class="cursor-pointer text-xs font-semibold text-zinc-300">View diff</summary>
                 <pre class="mt-2 overflow-auto rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-[11px] text-zinc-300">{{ artifact.diff }}</pre>
               </details>
             {% endif %}
           {% else %}
-            <div class="text-sm text-zinc-400">
+            <div class="mt-4 text-sm text-zinc-400">
               {% if run_status == 'running' %}Generating handoff…{% else %}No handoff artifact found.{% endif %}
             </div>
           {% endif %}
         </div>
-      </details>
+      </div>
 
-      <details
-        id="village-activity"
-        data-persist="village-activity"
-        data-default-open="closed"
-        class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
-      >
-        <summary class="flex cursor-pointer list-none items-center justify-between">
-          <div class="text-sm font-semibold">Village activity</div>
-          <div class="flex items-center gap-2 text-xs text-zinc-500">
-            {% if run_status == 'running' %}
-              <span class="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400/80"></span>
-              <span>live</span>
-            {% else %}
-              <span>details</span>
-            {% endif %}
+      <div id="panel-audit" data-tab-panel="audit" role="tabpanel" class="{% if default_tab != 'audit' %}hidden{% endif %}">
+        <div id="what-if" class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="text-sm font-semibold">What-if re-run</div>
+            <form action="/shifts/{{ shift_id }}/runs" method="post" class="flex flex-wrap items-center gap-2">
+              <div class="text-xs text-zinc-500">Energy</div>
+              {% set energy_selected = (run.energy_override or "")|lower %}
+              {% for (value, label) in [("","Auto"),("high","High"),("medium","Medium"),("low","Low")] %}
+                <label class="cursor-pointer">
+                  <input class="peer sr-only" type="radio" name="energy" value="{{ value }}" {% if value == energy_selected %}checked{% endif %} />
+                  <span class="inline-flex items-center rounded-full border border-zinc-800/80 bg-zinc-950/40 px-3 py-1 text-xs text-zinc-300 transition peer-checked:border-indigo-500/40 peer-checked:bg-indigo-500/10 peer-checked:text-indigo-200 hover:border-zinc-700/80">
+                    {{ label }}
+                  </span>
+                </label>
+              {% endfor %}
+              <button class="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-700/80">
+                Re-run council
+              </button>
+            </form>
           </div>
-        </summary>
-
-        <div class="mt-4">
-          <div class="flex items-center justify-between">
-            <div class="text-xs font-semibold text-zinc-300">Event stream</div>
-            <div class="text-[11px] text-zinc-500">{{ events|length }} events</div>
-          </div>
-          <div class="mt-3 grid gap-2">
-            {% for e in events[:8] %}
-              <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-400">
-                <div class="flex items-center justify-between">
-                  <div class="font-semibold text-zinc-300">{{ e.agent or "System" }}</div>
-                  <div class="text-[11px] text-zinc-500">{{ e.created_at }}</div>
-                </div>
-                <div class="mt-1">{{ e.message or e.type }}</div>
-              </div>
-            {% endfor %}
-            {% if events|length == 0 %}
-              <div class="text-xs text-zinc-500">No events.</div>
-            {% elif events|length > 8 %}
-              <div class="text-[11px] text-zinc-500">Showing latest 8.</div>
-            {% endif %}
+          <div class="mt-2 text-xs text-zinc-500">
+            Creates a new run and shows a v1→v2 diff in the handoff.
           </div>
         </div>
-
-        <div class="mt-5 border-t border-zinc-800/80 pt-4">
-          <div class="flex items-center justify-between">
-            <div class="text-xs font-semibold text-zinc-300">Roundtable (critics vote)</div>
-            <div class="text-[11px] text-zinc-500">
-              {% if roundtable_votes and roundtable_votes|length %}
-                {{ roundtable_votes|length }} votes
-              {% else %}
-                {% if run_status == 'running' %}pending{% else %}none{% endif %}
-              {% endif %}
+        {% if context_pack %}
+          <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+            <div class="flex items-center justify-between">
+              <div class="text-sm font-semibold">Context Pack</div>
+              <div class="flex flex-wrap items-center justify-end gap-2 text-[11px] text-zinc-400">
+                <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5">budget {{ context_pack.token_budget }}</span>
+                {% if context_pack.token_estimate %}
+                  <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5">est {{ context_pack.token_estimate }}</span>
+                {% endif %}
+                <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5">logs {{ (context_pack.log_refs or [])|length }}</span>
+              </div>
             </div>
-          </div>
-          {% if roundtable_votes and roundtable_votes|length %}
-            <div class="mt-3 grid gap-2">
-              {% for m in roundtable_votes[:3] %}
-                {% set meta = (m.meta or {}) %}
-                {% set agree = meta.agree if meta.agree is defined else false %}
-                {% set vote = meta.vote if meta.vote is defined else "" %}
-                {% set provider = meta.provider if meta.provider is defined else "" %}
-                {% set model = meta.model if meta.model is defined else "" %}
-                {% set ns2 = namespace(tweak="", concern="") %}
-                {% for line in (m.content or "").splitlines() %}
-                  {% if line.startswith("TWEAK:") and (ns2.tweak|length == 0) %}
-                    {% set ns2.tweak = line.replace("TWEAK:", "").strip() %}
-                  {% elif line.startswith("CONCERN:") and (ns2.concern|length == 0) %}
-                    {% set ns2.concern = line.replace("CONCERN:", "").strip() %}
-                  {% endif %}
-                {% endfor %}
-                <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-300">
-                  <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <div class="font-semibold text-zinc-200">{{ provider or "critic" }}{% if model %} · {{ model }}{% endif %}</div>
+
+            {% set radar = context_pack.radar if context_pack.radar is defined else None %}
+            {% set actions = (radar.suggested_next_actions if radar and radar.suggested_next_actions is defined else []) %}
+            {% set counts = context_pack.counts if context_pack.counts is defined else None %}
+
+            <div class="mt-4 grid gap-4 lg:grid-cols-2">
+              <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4">
+                <div class="text-xs font-semibold text-zinc-300">Signals</div>
+                <div class="mt-3 grid gap-2 text-xs">
+                  <div class="flex items-center justify-between">
+                    <div class="text-zinc-500">Energy</div>
+                    <div class="flex items-center gap-2">
                       <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5 text-[11px] text-zinc-300">
-                        vote {{ vote or "—" }}
+                        override: {{ context_pack.energy_override or "auto" }}
                       </span>
-                      {% if agree %}
-                        <span class="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-200">agrees</span>
-                      {% else %}
-                        <span class="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">differs</span>
+                      {% if radar and radar.energy_inferred is defined %}
+                        <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5 text-[11px] text-zinc-300">
+                          inferred: {{ radar.energy_inferred or "unknown" }}
+                        </span>
                       {% endif %}
                     </div>
                   </div>
-                  {% if ns2.concern %}
-                    <div class="mt-2 text-[11px] text-zinc-500"><span class="text-zinc-400">Concern:</span> {{ ns2.concern }}</div>
-                  {% endif %}
-                  {% if ns2.tweak %}
-                    <div class="mt-1 text-[11px] text-zinc-500"><span class="text-zinc-400">Tweak:</span> {{ ns2.tweak }}</div>
+
+                  <div class="flex items-center justify-between">
+                    <div class="text-zinc-500">Focus pressure</div>
+                    {% set fp = (radar.focus_pressure if radar and radar.focus_pressure is defined else "unknown") %}
+                    <span class="rounded-full border px-2 py-0.5 text-[11px]
+                      {% if fp in ['high'] %}border-rose-500/40 bg-rose-500/10 text-rose-200
+                      {% elif fp in ['medium'] %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                      {% elif fp in ['low'] %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+                      {% else %}border-zinc-800/80 bg-zinc-950/40 text-zinc-300{% endif %}">
+                      {{ fp }}
+                    </span>
+                  </div>
+
+                  <div class="flex items-center justify-between">
+                    <div class="text-zinc-500">Deadline risk</div>
+                    {% set dl = (radar.deadline_risk if radar and radar.deadline_risk is defined else "unknown") %}
+                    <span class="rounded-full border px-2 py-0.5 text-[11px]
+                      {% if dl in ['high'] %}border-rose-500/40 bg-rose-500/10 text-rose-200
+                      {% elif dl in ['medium'] %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                      {% elif dl in ['low'] %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+                      {% else %}border-zinc-800/80 bg-zinc-950/40 text-zinc-300{% endif %}">
+                      {{ dl }}
+                    </span>
+                  </div>
+
+                  <div class="flex items-center justify-between">
+                    <div class="text-zinc-500">Inventory risk</div>
+                    {% set inv = (radar.inventory_risk if radar and radar.inventory_risk is defined else "unknown") %}
+                    <span class="rounded-full border px-2 py-0.5 text-[11px]
+                      {% if inv in ['high'] %}border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200
+                      {% elif inv in ['medium'] %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                      {% elif inv in ['low'] %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+                      {% else %}border-zinc-800/80 bg-zinc-950/40 text-zinc-300{% endif %}">
+                      {{ inv }}
+                    </span>
+                  </div>
+
+                  <div class="flex items-center justify-between">
+                    <div class="text-zinc-500">Logs included</div>
+                    <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2 py-0.5 text-[11px] text-zinc-300">
+                      {% if counts and counts.logs_included is defined and counts.logs_total is defined %}
+                        {{ counts.logs_included }}/{{ counts.logs_total }}
+                      {% else %}
+                        {{ (context_pack.log_refs or [])|length }}
+                      {% endif %}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/40 p-4">
+                <div class="text-xs font-semibold text-zinc-300">Suggested next actions</div>
+                <div class="mt-3 grid gap-2">
+                  {% if actions and actions|length %}
+                    {% for a in actions[:5] %}
+                      <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/30 px-3 py-2 text-xs text-zinc-200">
+                        {{ a }}
+                      </div>
+                    {% endfor %}
+                  {% else %}
+                    <div class="text-xs text-zinc-500">No suggested actions.</div>
                   {% endif %}
                 </div>
-              {% endfor %}
-              {% if roundtable_votes|length > 3 %}
-                <div class="text-[11px] text-zinc-500">Showing latest 3.</div>
-              {% endif %}
+              </div>
             </div>
-          {% else %}
-            <div class="mt-3 text-sm text-zinc-400">
-              {% if run_status == 'running' %}Critics will vote after the plans are generated.{% else %}No roundtable votes found.{% endif %}
-            </div>
-          {% endif %}
-        </div>
 
-        <div class="mt-5 border-t border-zinc-800/80 pt-4">
-          <div class="flex items-center justify-between">
-            <div class="text-xs font-semibold text-zinc-300">Council transcript</div>
-            {% if council_artifact %}
-              <div class="text-[11px] text-zinc-500">v{{ council_artifact.version }}</div>
-            {% elif live_council_count %}
-              <div class="text-[11px] text-zinc-500">live · {{ live_council_count }} msgs</div>
+            {% set normalized = context_pack.normalized if context_pack.normalized is defined else None %}
+            {% if normalized %}
+              <details class="mt-4 overflow-hidden rounded-3xl border border-zinc-800/80 bg-zinc-950/40">
+                <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-zinc-200 hover:bg-zinc-950/40">
+                  Included notes
+                  <span class="ml-2 text-xs font-normal text-zinc-500">({{ (context_pack.log_refs or [])|length }})</span>
+                </summary>
+                <div class="grid gap-3 px-4 pb-4 pt-2">
+                  {% for (key, label, badge) in [
+                    ("deadlines","Deadlines","border-amber-500/40 bg-amber-500/10 text-amber-200"),
+                    ("inventory","Running low","border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200"),
+                    ("tasks","Tasks","border-indigo-500/40 bg-indigo-500/10 text-indigo-200"),
+                    ("notes","Notes","border-zinc-700/80 bg-zinc-950/30 text-zinc-300")
+                  ] %}
+                    {% set items = normalized.get(key) or [] %}
+                    {% if items|length %}
+                      <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/30 p-3">
+                        <div class="flex items-center justify-between">
+                          <div class="text-xs font-semibold text-zinc-300">{{ label }}</div>
+                          <span class="rounded-full border px-2 py-0.5 text-[11px] {{ badge }}">{{ items|length }}</span>
+                        </div>
+                        <div class="mt-2 grid gap-2">
+                          {% for it in items[:8] %}
+                            <a href="/shifts/{{ shift_id }}#log-{{ it.log_id }}" class="group rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-200 hover:border-zinc-700/80">
+                              <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                  <div class="truncate">{{ it.text }}</div>
+                                  <div class="mt-1 text-[11px] text-zinc-500">id {{ it.log_id[:6] }}</div>
+                                </div>
+                                <span class="mt-0.5 text-[11px] text-indigo-300/70 group-hover:text-indigo-200">view</span>
+                              </div>
+                            </a>
+                          {% endfor %}
+                        </div>
+                      </div>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </details>
+            {% elif context_pack_html %}
+              <div class="mt-4 prose prose-invert prose-zinc max-w-none text-sm">
+                {{ context_pack_html | safe }}
+              </div>
+            {% elif context_pack.summary %}
+              <div class="mt-3 whitespace-pre-line text-xs text-zinc-400">{{ context_pack.summary }}</div>
             {% endif %}
           </div>
-          {% if council_artifact %}
-            <div class="markdown mt-3 text-sm">
-              {{ council_html | safe }}
+        {% elif run_status == 'running' %}
+          <div class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 text-sm text-zinc-400 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+            Building context pack…
+          </div>
+        {% endif %}
+
+        <details id="run-tasks" class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]" {% if run_status == 'running' %}open{% endif %}>
+          {% set c = namespace(total=0, done=0, failed=0, running=0) %}
+          {% for t in tasks %}
+            {% set c.total = c.total + 1 %}
+            {% set st = (t.status or "")|lower %}
+            {% if st == "completed" %}{% set c.done = c.done + 1 %}{% endif %}
+            {% if st == "failed" %}{% set c.failed = c.failed + 1 %}{% endif %}
+            {% if st == "running" %}{% set c.running = c.running + 1 %}{% endif %}
+          {% endfor %}
+          <summary class="flex cursor-pointer list-none items-center justify-between">
+            <div class="text-sm font-semibold">Run tasks</div>
+            <div class="text-xs text-zinc-500">
+              {{ c.done }}/{{ c.total }} done{% if c.failed %} · {{ c.failed }} failed{% endif %}{% if c.running %} · running{% endif %}
             </div>
-            {% if council_artifact.diff %}
-              <details class="mt-4">
-                <summary class="cursor-pointer text-xs font-semibold text-zinc-300">View diff</summary>
-                <pre class="mt-2 overflow-auto rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-[11px] text-zinc-300">{{ council_artifact.diff }}</pre>
-              </details>
+          </summary>
+
+          {% set progress = ((c.done + c.failed) * 100 / c.total) if c.total else 0 %}
+          <div class="mt-3 h-2 overflow-hidden rounded-full border border-zinc-800/80 bg-zinc-950/40">
+            <div class="h-full {% if c.failed %}bg-rose-500/40{% else %}bg-emerald-500/35{% endif %}" style="width: {{ progress }}%"></div>
+          </div>
+          <div class="mt-4 grid gap-2">
+            {% for t in tasks %}
+              {% set status = (t.status or "")|lower %}
+              <div class="flex items-center justify-between rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-4 py-3 text-xs {% if selected_planner_task and t.name == selected_planner_task %}ring-1 {{ accent_ring }}{% endif %}">
+                <div>
+                  <div class="font-semibold text-zinc-200">{{ t.name }}</div>
+                  <div class="text-zinc-500">{{ t.agent_name }}</div>
+                  <div class="mt-1 text-[11px] text-zinc-600">
+                    {% if t.meta and t.meta.skill %}skill: {{ t.meta.skill }}{% endif %}
+                    {% set shown_attempt = (t.outputs.attempts if t.outputs and (t.outputs.attempts is not none) else t.attempt) %}
+                    {% if shown_attempt and t.max_attempts %} · attempt {{ shown_attempt }}/{{ t.max_attempts }}{% endif %}
+                    {% set task_provider = (t.outputs.provider if t.outputs and t.outputs.provider else (t.inputs.provider if t.inputs and t.inputs.provider else "")) %}
+                    {% set task_model = (t.outputs.model if t.outputs and t.outputs.model else (t.inputs.model if t.inputs and t.inputs.model else "")) %}
+                    {% if task_provider %}
+                      · source: {{ task_provider }}{% if task_model %} · {{ task_model }}{% endif %}
+                    {% elif t.name and (t.name.startswith("plan_") or t.name in ["normalize_logs","score_and_select","roundtable_vote"]) %}
+                      · source: heuristic
+                    {% endif %}
+                    {% if t.outputs and t.outputs.provider_fallback_from %} · fallback from {{ t.outputs.provider_fallback_from }}{% endif %}
+                    {% if t.outputs and t.outputs.fallback %} · fallback{% endif %}
+                  </div>
+                  {% if t.outputs and t.outputs.error %}
+                    <div class="mt-1 text-[11px] text-rose-300">error: {{ t.outputs.error }}</div>
+                  {% endif %}
+                  {% if t.error and t.error.message %}
+                    <div class="mt-1 text-[11px] text-rose-300">error: {{ t.error.type }}: {{ t.error.message }}</div>
+                  {% endif %}
+                </div>
+                <div class="rounded-full border px-3 py-1 text-[11px] font-semibold
+                  {% if status == 'completed' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+                  {% elif status == 'running' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                  {% elif status == 'failed' %}border-rose-500/40 bg-rose-500/10 text-rose-200
+                  {% elif status == 'queued' %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300
+                  {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+                  {{ t.status }}
+                </div>
+              </div>
+            {% endfor %}
+            {% if tasks|length == 0 %}
+              <div class="text-sm text-zinc-400">No tasks recorded.</div>
             {% endif %}
-          {% elif live_council_html %}
-            <div class="markdown mt-3 text-sm">
-              {{ live_council_html | safe }}
+          </div>
+        </details>
+
+        <details id="village-activity" class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]" {% if run_status == 'running' %}open{% endif %}>
+          <summary class="flex cursor-pointer list-none items-center justify-between">
+            <div class="text-sm font-semibold">Village activity</div>
+            <div class="text-xs text-zinc-500">{% if run_status == 'running' %}live{% else %}details{% endif %}</div>
+          </summary>
+
+          <div class="mt-4">
+            <div class="flex items-center justify-between">
+              <div class="text-xs font-semibold text-zinc-300">Event stream</div>
+              <div class="text-[11px] text-zinc-500">{{ events|length }} events</div>
             </div>
-          {% else %}
-            <div class="mt-3 text-sm text-zinc-400">
-              {% if run_status == 'running' %}Transcript will appear when the run finishes.{% else %}No council transcript found.{% endif %}
+            <div class="mt-3 grid gap-2">
+              {% for e in events[:8] %}
+                <div class="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-400">
+                  <div class="flex items-center justify-between">
+                    <div class="font-semibold text-zinc-300">{{ e.agent or "System" }}</div>
+                    <div class="text-[11px] text-zinc-500">{{ e.created_at }}</div>
+                  </div>
+                  <div class="mt-1">{{ e.message or e.type }}</div>
+                </div>
+              {% endfor %}
+              {% if events|length == 0 %}
+                <div class="text-xs text-zinc-500">No events.</div>
+              {% elif events|length > 8 %}
+                <div class="text-[11px] text-zinc-500">Showing latest 8.</div>
+              {% endif %}
             </div>
-          {% endif %}
-        </div>
-      </details>
+          </div>
+
+          <div class="mt-5 border-t border-zinc-800/80 pt-4">
+            <div class="flex items-center justify-between">
+              <div class="text-xs font-semibold text-zinc-300">Council transcript</div>
+              {% if council_artifact %}
+                <div class="text-[11px] text-zinc-500">v{{ council_artifact.version }}</div>
+              {% elif live_council_count %}
+                <div class="text-[11px] text-zinc-500">live · {{ live_council_count }} msgs</div>
+              {% endif %}
+            </div>
+            {% if council_artifact %}
+              <div class="markdown mt-3 text-sm">
+                {{ council_html | safe }}
+              </div>
+              {% if council_artifact.diff %}
+                <details class="mt-4">
+                  <summary class="cursor-pointer text-xs font-semibold text-zinc-300">View diff</summary>
+                  <pre class="mt-2 overflow-auto rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-[11px] text-zinc-300">{{ council_artifact.diff }}</pre>
+                </details>
+              {% endif %}
+            {% elif live_council_html %}
+              <div class="markdown mt-3 text-sm">
+                {{ live_council_html | safe }}
+              </div>
+            {% else %}
+              <div class="mt-3 text-sm text-zinc-400">
+                {% if run_status == 'running' %}Transcript will appear when the run finishes.{% else %}No council transcript found.{% endif %}
+              </div>
+            {% endif %}
+          </div>
+        </details>
+      </div>
     </div>
   </div>
 </div>

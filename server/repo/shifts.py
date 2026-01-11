@@ -15,6 +15,12 @@ def _default_title(now: datetime) -> str:
     # Use UTC for stored title; UI will show local time via client-side formatting.
     return f"Shift — {now.strftime('%b %d')}"
 
+def _shorten(s: str, max_len: int = 48) -> str:
+    txt = " ".join((s or "").strip().split())
+    if len(txt) <= max_len:
+        return txt
+    return txt[: max_len - 1].rstrip() + "…"
+
 def _with_window_fields(doc: dict) -> None:
     created_at = doc.get("created_at")
     if isinstance(created_at, datetime):
@@ -40,9 +46,11 @@ class ShiftsRepo:
     ) -> str:
         now = created_at or _now()
         upd = updated_at or now
+        clean_title = (title or "").strip()
         result = await self._col.insert_one(
             {
-                "title": (title or "").strip() or _default_title(now),
+                "title": clean_title or _default_title(now),
+                "title_user_set": bool(clean_title),
                 "created_at": now,
                 "updated_at": upd,
                 **(extra or {}),
@@ -62,7 +70,7 @@ class ShiftsRepo:
             return
         await self._col.update_one(
             {"_id": ObjectId(shift_id)},
-            {"$set": {"title": clean, "updated_at": _now()}},
+            {"$set": {"title": clean, "title_user_set": True, "updated_at": _now()}},
         )
 
     async def list_recent(self, limit: int = 20) -> list[dict]:
@@ -83,6 +91,47 @@ class ShiftsRepo:
                 doc["title"] = _default_title(doc["created_at"])
             _with_window_fields(doc)
         return doc
+
+    async def maybe_autotitle(self, shift_id: str, *, log_type: str, text: str) -> str | None:
+        """
+        Auto-title a shift from its first high-signal log, but only if the user
+        hasn't renamed it.
+        """
+        doc = await self._col.find_one({"_id": ObjectId(shift_id)}, projection={"title": 1, "created_at": 1, "title_user_set": 1})
+        if not doc:
+            return None
+        if bool(doc.get("title_user_set")):
+            return None
+        created_at = doc.get("created_at")
+        if not isinstance(created_at, datetime):
+            return None
+        current = str(doc.get("title") or "").strip()
+        if current and current != _default_title(created_at):
+            return None
+
+        prefix = created_at.strftime("%b %d")
+        t = (log_type or "").strip().lower()
+        if t == "note":
+            return None
+        base = _shorten(text or "", 56)
+        if not base:
+            return None
+
+        if t == "deadline":
+            topic = f"Deadline — {base}"
+        elif t == "inventory":
+            topic = f"Supplies — {base}"
+        elif t == "task":
+            topic = f"Task — {base}"
+        else:
+            topic = base
+
+        new_title = f"{prefix} · {topic}"
+        await self._col.update_one(
+            {"_id": ObjectId(shift_id)},
+            {"$set": {"title": new_title, "updated_at": _now()}},
+        )
+        return new_title
 
     async def delete_cascade(self, shift_id: str, *, include_shift_doc: bool = True) -> dict[str, int]:
         """

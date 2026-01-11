@@ -251,7 +251,11 @@ details > summary::-webkit-details-marker {
 /* Sticky side panel should scroll internally on large screens */
 @media (min-width: 1024px) {
   .sticky-panel {
-    max-height: min(62vh, calc(100vh - 7rem));
+    overscroll-behavior: contain;
+  }
+
+  .sticky-panel-body {
+    max-height: calc(100vh - 11rem);
     overflow: auto;
     overscroll-behavior: contain;
   }
