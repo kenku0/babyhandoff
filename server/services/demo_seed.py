@@ -16,6 +16,26 @@ class DemoShiftTemplate:
     title: str
     logs: list[tuple[str, str]]
 
+def _demo_extra_logs() -> list[tuple[str, str]]:
+    # Keep these non-medical and broadly relatable for new parents.
+    return [
+        ("task", "Refill diaper caddy (diapers/wipes/cream) and put it back in the same spot."),
+        ("task", "Set out next outfit + spare onesie (save a future scramble)."),
+        ("task", "Pack go-bag basics: wipes, diapers, changing pad, snacks, charger."),
+        ("task", "Reset the kitchen: one load of bottles/dishes, then stop."),
+        ("task", "Make a 3-item snack plan (protein + easy grab)."),
+        ("task", "Charge essentials (phone/monitor/portable battery)."),
+        ("task", "Do a 10-minute tidy pass: only surfaces you’ll use tonight."),
+        ("deadline", "Send one short logistics message (daycare / family) to unblock tomorrow."),
+        ("deadline", "Pay/submit the one bill/form that will wake you up at 2am if you forget."),
+        ("inventory", "Easy snacks running low (bars/nuts/yogurt)."),
+        ("inventory", "Paper towels / trash bags low."),
+        ("inventory", "Coffee/tea low; tomorrow morning risk."),
+        ("note", "Constraint: protect one quiet block; phone on Do Not Disturb."),
+        ("note", "Energy likely dips later; keep plans reversible."),
+        ("note", "If it turns chaotic: default to essentials + one admin, nothing else."),
+    ]
+
 
 DEMO_TEMPLATES: list[DemoShiftTemplate] = [
     DemoShiftTemplate(
@@ -155,18 +175,36 @@ async def seed_demo_month(
 
         # Stagger log timestamps within the shift window.
         log_base = created_at + timedelta(minutes=3)
-        log_spacing = rng.randint(8, 22)
-        log_count = min(len(tpl.logs), rng.randint(4, max(4, len(tpl.logs))))
-        selected_logs = tpl.logs[:log_count]
+        target_logs = 10
+
+        selected_logs: list[tuple[str, str]] = tpl.logs[:]
+        extras = _demo_extra_logs()
+        rng.shuffle(extras)
+        seen = set((t, txt) for (t, txt) in selected_logs)
+        for t, txt in extras:
+            if len(selected_logs) >= target_logs:
+                break
+            key = (t, txt)
+            if key in seen:
+                continue
+            selected_logs.append((t, txt))
+            seen.add(key)
+        if len(selected_logs) > target_logs:
+            selected_logs = selected_logs[:target_logs]
+
+        # Spread entries across the 12h window for a denser, more realistic timeline.
+        # Keep ordering stable; time offsets create the visual variability.
+        minute_offsets = sorted(rng.randint(0, (12 * 60) - 10) for _ in range(len(selected_logs)))
 
         last_log_at = log_base
         shift_id = await shifts_repo.create_shift(
+            title=tpl.title,
             created_at=created_at,
             updated_at=created_at,
             extra={"demo": True, "demo_scenario": tpl.title},
         )
         for j, (t, txt) in enumerate(selected_logs):
-            last_log_at = log_base + timedelta(minutes=j * log_spacing)
+            last_log_at = log_base + timedelta(minutes=minute_offsets[j])
             await logs_repo.add(shift_id, t, txt, created_at=last_log_at)
 
         # Make the shift look "recently worked on" relative to its own day.

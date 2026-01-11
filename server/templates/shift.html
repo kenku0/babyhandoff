@@ -152,16 +152,7 @@
     </div>
 
     <div class="lg:col-span-1">
-      <div
-        class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
-        hx-get="/shifts/{{ shift['_id'] }}/risk"
-        hx-trigger="load, every 5s"
-        hx-swap="innerHTML"
-      >
-        <div class="text-sm text-zinc-400">Loading Risk Radar…</div>
-      </div>
-
-      <div id="council" class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+      <div id="council" class="rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
         <div class="text-sm font-semibold">Village Council</div>
         <div class="mt-2 text-sm text-zinc-400">
           Generate three competing plans and auto-select the best (next 12h + lightweight 24h outlook).
@@ -239,6 +230,15 @@
             </div>
           {% endif %}
         </div>
+      </div>
+
+      <div
+        class="mt-6 rounded-3xl border border-zinc-800/80 bg-zinc-950/55 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
+        hx-get="/shifts/{{ shift['_id'] }}/risk"
+        hx-trigger="load, every 5s"
+        hx-swap="innerHTML"
+      >
+        <div class="text-sm text-zinc-400">Loading Risk Radar…</div>
       </div>
     </div>
   </div>

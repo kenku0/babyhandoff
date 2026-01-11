@@ -129,7 +129,7 @@ async def lifespan(app: FastAPI):
             try:
                 existing = await mongo.db["shifts"].count_documents({})
                 if existing == 0:
-                    await seed_demo_month(mongo, days=30, shift_count=10)
+                    await seed_demo_month(mongo, days=30, shift_count=30)
             except Exception:
                 # Never block app startup on demo seed.
                 pass
@@ -334,7 +334,7 @@ async def demo_reset(request: Request):
         return Response(content="Demo mode is disabled.", status_code=403)
     mongo = _mongo(request)
     await reset_demo_data(mongo)
-    await seed_demo_month(mongo, days=30, shift_count=10)
+    await seed_demo_month(mongo, days=30, shift_count=30)
     return RedirectResponse(url="/", status_code=303)
 
 
