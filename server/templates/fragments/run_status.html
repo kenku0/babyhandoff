@@ -1,0 +1,26 @@
+{% set run_status = (run.status or "")|lower %}
+<div
+  id="run-status-badge"
+  {% if run_status in ["running", "queued"] %}
+    hx-get="/shifts/{{ shift_id }}/runs/{{ run['_id'] }}/fragment/status"
+    hx-trigger="every 1.5s"
+    hx-swap="outerHTML"
+  {% endif %}
+>
+  <div class="flex flex-wrap items-center gap-2 text-xs">
+    <span class="rounded-full border px-2.5 py-1 font-semibold
+      {% if run_status == 'completed' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+      {% elif run_status in ['running', 'queued'] %}border-amber-500/40 bg-amber-500/10 text-amber-200
+      {% elif run_status == 'failed' %}border-rose-500/40 bg-rose-500/10 text-rose-200
+      {% else %}border-zinc-700/80 bg-zinc-950/30 text-zinc-300{% endif %}">
+      {{ run.status }}
+    </span>
+    <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 text-zinc-400">run {{ run['_id'] }}</span>
+    {% if run.council_mode %}
+      <span class="rounded-full border border-zinc-800/80 bg-zinc-950/40 px-2.5 py-1 text-zinc-400">mode {{ run.council_mode }}</span>
+    {% endif %}
+    {% if run_status in ['running', 'queued'] %}
+      <span class="text-zinc-500">Live updating…</span>
+    {% endif %}
+  </div>
+</div>

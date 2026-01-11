@@ -1618,6 +1618,73 @@ async def _build_run_template_data(mongo: Mongo, *, shift_id: str, run_id: str, 
             )
             live_council_html = render_markdown_safe(live_council_md)
 
+    def _provider_label(provider: str) -> str:
+        p = (provider or "").strip().lower()
+        if p == "openai":
+            return "ChatGPT"
+        if p == "anthropic":
+            return "Claude"
+        if p == "gemini":
+            return "Gemini"
+        if p == "heuristic":
+            return "heuristic"
+        return provider or "unknown"
+
+    def _format_model(provider: str, model: str | None) -> str:
+        base = _provider_label(provider)
+        m = (model or "").strip()
+        return f"{base} · {m}" if m else base
+
+    # Model usage summary for the header: what actually ran vs what is configured.
+    used_pairs: list[tuple[str, str]] = []
+    for p in proposals:
+        src = p.get("source") if isinstance(p, dict) else None
+        if not isinstance(src, dict):
+            continue
+        prov = str(src.get("provider") or "").strip()
+        model = str(src.get("model") or "").strip()
+        if prov:
+            used_pairs.append((prov, model))
+    if decision:
+        jm = str(decision.get("judge_mode") or "").strip()
+        jmodel = str(decision.get("judge_model") or "").strip()
+        if jm:
+            used_pairs.append((jm, jmodel))
+    for c in roundtable_cards:
+        prov = str(c.get("provider") or "").strip()
+        model = str(c.get("model") or "").strip()
+        if prov and prov != "heuristic":
+            used_pairs.append((prov, model))
+
+    # De-dupe while preserving stable provider ordering.
+    order = {"openai": 0, "anthropic": 1, "gemini": 2, "heuristic": 3}
+    seen: set[tuple[str, str]] = set()
+    used_pairs_deduped: list[tuple[str, str]] = []
+    for prov, model in sorted(used_pairs, key=lambda x: (order.get(x[0].lower(), 9), x[1])):
+        key = (prov.lower(), model)
+        if key in seen:
+            continue
+        seen.add(key)
+        used_pairs_deduped.append((prov, model))
+
+    used_text = ", ".join(_format_model(p, m) for p, m in used_pairs_deduped) if used_pairs_deduped else ""
+    if not used_text:
+        used_text = "none (heuristic)"
+
+    llm_meta = run.get("llm") if isinstance(run, dict) else {}
+    configured_models = (llm_meta or {}).get("models") if isinstance(llm_meta, dict) else {}
+    keys_present = (llm_meta or {}).get("keys_present") if isinstance(llm_meta, dict) else {}
+    configured_bits: list[str] = []
+    if isinstance(configured_models, dict):
+        for prov in ["openai", "anthropic", "gemini"]:
+            m = configured_models.get(prov)
+            if not m:
+                continue
+            enabled = bool(keys_present.get(prov)) if isinstance(keys_present, dict) else False
+            suffix = "" if enabled else " (key missing)"
+            configured_bits.append(_format_model(prov, str(m)) + suffix)
+    configured_text = ", ".join(configured_bits)
+
     return {
         "shift_id": shift_id,
         "shift": shift,
@@ -1640,6 +1707,8 @@ async def _build_run_template_data(mongo: Mongo, *, shift_id: str, run_id: str, 
         "roundtable_cards": roundtable_cards,
         "council_dialogue": council_dialogue,
         "events": run_events,
+        "model_usage_used": used_text,
+        "model_usage_configured": configured_text,
     }
 
 
